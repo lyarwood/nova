@@ -13,6 +13,7 @@
 #    under the License.
 
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 from oslo_utils import versionutils
 
 from nova import block_device
@@ -62,10 +63,12 @@ class BlockDeviceMapping(base.NovaPersistentObject, base.NovaObject,
     # Version 1.16: Deprecate get_by_volume_id(), add
     #               get_by_volume() and get_by_volume_and_instance()
     # Version 1.17: Added tag field
-    VERSION = '1.17'
+    # Version 1.18: Added uuid
+    VERSION = '1.18'
 
     fields = {
         'id': fields.IntegerField(),
+        'uuid': fields.UUIDField(),
         'instance_uuid': fields.UUIDField(),
         'instance': fields.ObjectField('Instance', nullable=True),
         'source_type': fields.BlockDeviceSourceTypeField(nullable=True),
@@ -88,6 +91,8 @@ class BlockDeviceMapping(base.NovaPersistentObject, base.NovaObject,
 
     def obj_make_compatible(self, primitive, target_version):
         target_version = versionutils.convert_version_to_tuple(target_version)
+        if target_version < (1, 18) and 'uuid' in primitive:
+            del primitive['uuid']
         if target_version < (1, 17) and 'tag' in primitive:
             del primitive['tag']
 
@@ -99,6 +104,10 @@ class BlockDeviceMapping(base.NovaPersistentObject, base.NovaObject,
         for key in block_device_obj.fields:
             if key in BLOCK_DEVICE_OPTIONAL_ATTRS:
                 continue
+            if key == 'uuid' and not db_block_device.get(key):
+                # NOTE(danms): While the records could be nullable,
+                # generate a UUID on read since the object requires it
+                db_block_device[key] = uuidutils.generate_uuid()
             block_device_obj[key] = db_block_device[key]
         if 'instance' in expected_attrs:
             my_inst = objects.Instance(context)

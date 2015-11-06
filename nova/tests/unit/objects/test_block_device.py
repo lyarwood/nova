@@ -33,6 +33,7 @@ class _TestBlockDeviceMappingObject(object):
         fake_bdm = fake_block_device.FakeDbBlockDeviceDict({
             'id': 123,
             'instance_uuid': instance.get('uuid') or uuids.instance,
+            'uuid': uuids.bdm,
             'device_name': '/dev/sda2',
             'source_type': 'snapshot',
             'destination_type': 'volume',
@@ -369,6 +370,15 @@ class _TestBlockDeviceMappingObject(object):
         bdm = objects.BlockDeviceMapping(context=self.context, **values)
         primitive = bdm.obj_to_primitive(target_version='1.16')
         self.assertNotIn('tag', primitive)
+
+    def test_load_with_null_uuid(self):
+        bdm = self.fake_bdm()
+        bdm['uuid'] = None
+        bdm_obj = objects.BlockDeviceMapping()
+        objects.BlockDeviceMapping._from_db_object(self.context,
+                                                   bdm_obj,
+                                                   bdm)
+        self.assertIsNotNone(bdm_obj.uuid)
 
 
 class TestBlockDeviceMappingObject(test_objects._LocalTest,
