@@ -4197,6 +4197,9 @@ def block_device_mapping_create(context, values, legacy=True):
     values = _from_legacy_values(values, legacy)
     convert_objects_related_datetimes(values)
 
+    if not values.get('uuid'):
+        values['uuid'] = uuidutils.generate_uuid()
+
     bdm_ref = models.BlockDeviceMapping()
     bdm_ref.update(values)
     bdm_ref.save(context.session)
@@ -4210,7 +4213,10 @@ def block_device_mapping_update(context, bdm_id, values, legacy=True):
     values = _from_legacy_values(values, legacy, allow_updates=True)
     convert_objects_related_datetimes(values)
 
-    query = _block_device_mapping_get_query(context).filter_by(id=bdm_id)
+    if uuidutils.is_uuid_like(bdm_id):
+        query = _block_device_mapping_get_query(context).filter_by(uuid=bdm_id)
+    else:
+        query = _block_device_mapping_get_query(context).filter_by(id=bdm_id)
     query.update(values)
     return query.first()
 
@@ -4222,9 +4228,16 @@ def block_device_mapping_update_or_create(context, values, legacy=True):
     convert_objects_related_datetimes(values)
 
     result = None
-    # NOTE(xqueralt): Only update a BDM when device_name was provided. We
-    # allow empty device names so they will be set later by the manager.
-    if values['device_name']:
+    # NOTE(xqueralt,danms): Only update a BDM when device_name or
+    # uuid was provided. Prefer the uuid, if available, but fall
+    # back to device_name if no uuid is provided, which can happen
+    # for BDMs created before we had a uuid. We allow empty device
+    # names so they will be set later by the manager.
+    if 'uuid' in values:
+        query = _block_device_mapping_get_query(context)
+        result = query.filter_by(instance_uuid=values['instance_uuid'],
+                                 uuid=values['uuid']).first()
+    if not result and values['device_name']:
         query = _block_device_mapping_get_query(context)
         result = query.filter_by(instance_uuid=values['instance_uuid'],
                                  device_name=values['device_name']).first()
@@ -4234,6 +4247,7 @@ def block_device_mapping_update_or_create(context, values, legacy=True):
     else:
         # Either the device_name doesn't exist in the database yet, or no
         # device_name was provided. Both cases mean creating a new BDM.
+        values['uuid'] = uuidutils.generate_uuid()
         result = models.BlockDeviceMapping(**values)
         result.save(context.session)
 
@@ -4290,6 +4304,16 @@ def block_device_mapping_get_by_instance_and_volume_id(context, volume_id,
 
 @require_context
 @pick_context_manager_writer
+def block_device_mapping_get_by_uuid(context, uuid,
+                                     columns_to_join=None):
+    return _block_device_mapping_get_query(context,
+            columns_to_join=columns_to_join).\
+                filter_by(uuid=uuid).\
+                first()
+
+
+@require_context
+@pick_context_manager_writer
 def block_device_mapping_destroy(context, bdm_id):
     _block_device_mapping_get_query(context).\
             filter_by(id=bdm_id).\
@@ -4313,6 +4337,14 @@ def block_device_mapping_destroy_by_instance_and_device(context, instance_uuid,
     _block_device_mapping_get_query(context).\
             filter_by(instance_uuid=instance_uuid).\
             filter_by(device_name=device_name).\
+            soft_delete()
+
+
+@require_context
+@pick_context_manager_writer
+def block_device_mapping_destroy_by_uuid(context, uuid):
+    _block_device_mapping_get_query(context).\
+            filter_by(uuid=uuid).\
             soft_delete()
 
 

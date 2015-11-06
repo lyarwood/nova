@@ -1322,6 +1322,13 @@ def block_device_mapping_get_by_instance_and_volume_id(context, volume_id,
         context, volume_id, instance_uuid, columns_to_join)
 
 
+def block_device_mapping_get_by_uuid(context, uuid,
+                                     columns_to_join=None):
+    """Get block device mapping by uuid."""
+    return IMPL.block_device_mapping_get_by_uuid(context, uuid,
+                                                 columns_to_join)
+
+
 def block_device_mapping_destroy(context, bdm_id):
     """Destroy the block device mapping."""
     return IMPL.block_device_mapping_destroy(context, bdm_id)
@@ -1339,6 +1346,11 @@ def block_device_mapping_destroy_by_instance_and_volume(context, instance_uuid,
     """Destroy the block device mapping."""
     return IMPL.block_device_mapping_destroy_by_instance_and_volume(
         context, instance_uuid, volume_id)
+
+
+def block_device_mapping_destroy_by_uuid(context, uuid):
+    """Destroy the block device mapping."""
+    return IMPL.block_device_mapping_destroy_by_uuid(context, uuid)
 
 
 ####################

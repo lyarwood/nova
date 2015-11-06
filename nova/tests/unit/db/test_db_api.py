@@ -6365,8 +6365,14 @@ class BlockDeviceMappingTestCase(test.TestCase):
     def test_block_device_mapping_create(self):
         bdm = self._create_bdm({})
         self.assertIsNotNone(bdm)
+        self.assertTrue(uuidutils.is_uuid_like(bdm['uuid']))
 
-    def test_block_device_mapping_update(self):
+    def test_block_device_mapping_create_with_sketchy_uuid(self):
+        bdm = self._create_bdm({'uuid': ''})
+        self.assertIsNotNone(bdm)
+        self.assertTrue(uuidutils.is_uuid_like(bdm['uuid']))
+
+    def test_block_device_mapping_update_by_id(self):
         bdm = self._create_bdm({})
         result = db.block_device_mapping_update(
                 self.ctxt, bdm['id'], {'destination_type': 'moon'},
@@ -6378,6 +6384,17 @@ class BlockDeviceMappingTestCase(test.TestCase):
         self.assertEqual(dict(bdm_real[0]),
                          dict(result))
 
+    def test_block_device_mapping_update_by_uuid(self):
+        bdm = self._create_bdm({})
+        result = db.block_device_mapping_update(
+                self.ctxt, bdm['uuid'], {'destination_type': 'moon'},
+                legacy=False)
+        uuid = bdm['instance_uuid']
+        bdm_real = db.block_device_mapping_get_all_by_instance(self.ctxt, uuid)
+        self.assertEqual('moon', bdm_real[0]['destination_type'])
+        # Also make sure the update call returned correct data
+        self.assertEqual(dict(result), dict(bdm_real[0]))
+
     def test_block_device_mapping_update_or_create(self):
         values = {
             'instance_uuid': self.instance['uuid'],
@@ -6386,16 +6403,19 @@ class BlockDeviceMappingTestCase(test.TestCase):
             'destination_type': 'volume'
         }
         # check create
-        db.block_device_mapping_update_or_create(self.ctxt, values,
-                                                 legacy=False)
+        bdm = db.block_device_mapping_update_or_create(self.ctxt,
+                                                       copy.deepcopy(values),
+                                                       legacy=False)
+        self.assertTrue(uuidutils.is_uuid_like(bdm['uuid']))
         uuid = values['instance_uuid']
         bdm_real = db.block_device_mapping_get_all_by_instance(self.ctxt, uuid)
         self.assertEqual(len(bdm_real), 1)
         self.assertEqual(bdm_real[0]['device_name'], 'fake_name')
 
         # check update
-        values['destination_type'] = 'camelot'
-        db.block_device_mapping_update_or_create(self.ctxt, values,
+        bdm0 = dict(values)
+        bdm0['destination_type'] = 'camelot'
+        db.block_device_mapping_update_or_create(self.ctxt, bdm0,
                                                  legacy=False)
         bdm_real = db.block_device_mapping_get_all_by_instance(self.ctxt, uuid)
         self.assertEqual(len(bdm_real), 1)
@@ -6404,12 +6424,13 @@ class BlockDeviceMappingTestCase(test.TestCase):
         self.assertEqual(bdm_real['destination_type'], 'camelot')
 
         # check create without device_name
-        bdm1 = dict(values)
+        bdm1 = copy.deepcopy(values)
         bdm1['device_name'] = None
         db.block_device_mapping_update_or_create(self.ctxt, bdm1, legacy=False)
         bdms = db.block_device_mapping_get_all_by_instance(self.ctxt, uuid)
         with_device_name = [b for b in bdms if b['device_name'] is not None]
         without_device_name = [b for b in bdms if b['device_name'] is None]
+        self.assertEqual(2, len(bdms))
         self.assertEqual(len(with_device_name), 1,
                          'expected 1 bdm with device_name, found %d' %
                          len(with_device_name))
@@ -6430,6 +6451,20 @@ class BlockDeviceMappingTestCase(test.TestCase):
         self.assertEqual(len(without_device_name), 2,
                          'expected 2 bdms without device_name, found %d' %
                          len(without_device_name))
+
+    def test_block_device_mapping_update_or_create_with_uuid(self):
+        bdm = self._create_bdm({})
+        values = {
+            'uuid': bdm['uuid'],
+            'instance_uuid': bdm['instance_uuid'],
+            'device_name': 'foobar',
+        }
+        db.block_device_mapping_update_or_create(self.ctxt, values,
+                                                 legacy=False)
+        real_bdms = db.block_device_mapping_get_all_by_instance(
+            self.ctxt, bdm['instance_uuid'])
+        self.assertEqual(1, len(real_bdms))
+        self.assertEqual('foobar', real_bdms[0]['device_name'])
 
     def test_block_device_mapping_update_or_create_multiple_ephemeral(self):
         uuid = self.instance['uuid']
@@ -6560,6 +6595,18 @@ class BlockDeviceMappingTestCase(test.TestCase):
         bdms = db.block_device_mapping_get_all_by_instance(self.ctxt, uuid)
         self.assertEqual(len(bdms), 1)
         self.assertEqual(bdms[0]['device_name'], '/dev/vda')
+
+    def test_block_device_mapping_destroy_by_uuid(self):
+        bdm1 = self._create_bdm({'device_name': '/dev/vda'})
+        bdm2 = self._create_bdm({'device_name': '/dev/vdb'})
+
+        db.block_device_mapping_destroy_by_uuid(self.ctxt, bdm1['uuid'])
+
+        bdms = db.block_device_mapping_get_all_by_instance(
+            self.ctxt, bdm1['instance_uuid'])
+        self.assertEqual(1, len(bdms))
+        self.assertEqual('/dev/vdb', bdms[0]['device_name'])
+        self.assertEqual(bdm2['uuid'], bdms[0]['uuid'])
 
     def test_block_device_mapping_get_all_by_volume_id(self):
         self._create_bdm({'volume_id': 'fake_id'})

@@ -579,10 +579,14 @@ class BlockDeviceMapping(BASE, NovaBase, models.SoftDeleteMixin):
         Index('block_device_mapping_instance_uuid_volume_id_idx',
               'instance_uuid', 'volume_id'),
         Index('block_device_mapping_instance_uuid_idx', 'instance_uuid'),
+        Index('block_device_mapping_uuid_idx', 'uuid'),
     )
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     instance_uuid = Column(String(36), ForeignKey('instances.uuid'))
+    # FIXME(danms): This should eventually be unique and non-nullable,
+    # but we need a transition period first.
+    uuid = Column(String(36))
     instance = orm.relationship(Instance,
                             backref=orm.backref('block_device_mapping'),
                             foreign_keys=instance_uuid,
