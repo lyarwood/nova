@@ -723,7 +723,7 @@ class ComputeDriver(object):
         raise NotImplementedError()
 
     def rescue(self, context, instance, network_info, image_meta,
-               rescue_password):
+               rescue_password, block_device_info=None):
         """Rescue the specified instance.
 
         :param nova.context.RequestContext context:

@@ -2243,6 +2243,8 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         fake_nw_info = network_model.NetworkInfo()
         rescue_image_meta = objects.ImageMeta.from_dict(
             {'id': 'fake', 'name': 'fake'})
+        fake_bdm_list = []
+        fake_bdm_info = 'fake-bdm'
         with test.nested(
             mock.patch.object(self.context, 'elevated',
                               return_value=self.context),
@@ -2250,6 +2252,11 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                               return_value=fake_nw_info),
             mock.patch.object(self.compute, '_get_rescue_image',
                               return_value=rescue_image_meta),
+            mock.patch.object(objects.BlockDeviceMappingList,
+                              'get_by_instance_uuid',
+                              return_value=fake_bdm_list),
+            mock.patch.object(self.compute, '_get_instance_block_device_info',
+                              return_value=fake_bdm_info),
             mock.patch.object(self.compute, '_notify_about_instance_usage'),
             mock.patch.object(self.compute, '_power_off_instance'),
             mock.patch.object(self.compute.driver, 'rescue'),
@@ -2258,8 +2265,8 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
                               return_value=power_state.RUNNING),
             mock.patch.object(instance, 'save')
         ) as (
-            elevated_context, get_nw_info,
-            get_rescue_image, notify_instance_usage, power_off_instance,
+            elevated_context, get_nw_info, get_rescue_image, get_bdm_list,
+            get_bdm_info, notify_instance_usage, power_off_instance,
             driver_rescue, notify_usage_exists, get_power_state, instance_save
         ):
             self.compute.rescue_instance(
@@ -2276,6 +2283,9 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
             get_nw_info.assert_called_once_with(self.context, instance)
             get_rescue_image.assert_called_once_with(
                 self.context, instance, None)
+            get_bdm_list.assert_called_once_with(self.context, instance.uuid)
+            get_bdm_info.assert_called_once_with(self.context, instance,
+                                                 bdms=fake_bdm_list)
 
             extra_usage_info = {'rescue_image_name': 'fake'}
             notify_calls = [
@@ -2293,7 +2303,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
 
             driver_rescue.assert_called_once_with(
                 self.context, instance, fake_nw_info, rescue_image_meta,
-                'verybadpass')
+                'verybadpass', fake_bdm_info)
 
             notify_usage_exists.assert_called_once_with(self.compute.notifier,
                 self.context, instance, current_period=True)

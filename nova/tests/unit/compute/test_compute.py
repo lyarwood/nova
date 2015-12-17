@@ -2133,7 +2133,7 @@ class ComputeTestCase(BaseTestCase):
                   'unrescued': False}
 
         def fake_rescue(self, context, instance_ref, network_info, image_meta,
-                        rescue_password):
+                        rescue_password, block_device_mapping):
             called['rescued'] = True
 
         self.stubs.Set(nova.virt.fake.FakeDriver, 'rescue', fake_rescue)
@@ -2162,7 +2162,7 @@ class ComputeTestCase(BaseTestCase):
     def test_rescue_notifications(self):
         # Ensure notifications on instance rescue.
         def fake_rescue(self, context, instance_ref, network_info, image_meta,
-                        rescue_password):
+                        rescue_password, block_device_mapping):
             pass
         self.stubs.Set(nova.virt.fake.FakeDriver, 'rescue', fake_rescue)
 
@@ -2249,8 +2249,8 @@ class ComputeTestCase(BaseTestCase):
             mox.IgnoreArg(), inst_obj, mox.IgnoreArg()).AndReturn(
                 objects.ImageMeta.from_dict({}))
         nova.virt.fake.FakeDriver.rescue(
-            mox.IgnoreArg(), inst_obj, [], mox.IgnoreArg(), 'password'
-            ).AndRaise(RuntimeError("Try again later"))
+            mox.IgnoreArg(), inst_obj, [], mox.IgnoreArg(), 'password',
+            mox.IgnoreArg()).AndRaise(RuntimeError("Try again later"))
 
         self.mox.ReplayAll()
 
@@ -2267,8 +2267,10 @@ class ComputeTestCase(BaseTestCase):
         self.assertEqual(vm_states.ERROR, inst_obj.vm_state)
 
     @mock.patch.object(image_api.API, "get")
+    @mock.patch.object(nova.compute.manager.ComputeManager,
+                       '_get_instance_block_device_info')
     @mock.patch.object(nova.virt.fake.FakeDriver, "rescue")
-    def test_rescue_with_image_specified(self, mock_rescue,
+    def test_rescue_with_image_specified(self, mock_rescue, mock_get_bdm_info,
                                          mock_image_get):
         image_ref = uuids.image_instance
         rescue_image_meta = {}
@@ -2279,6 +2281,7 @@ class ComputeTestCase(BaseTestCase):
         mock_context = mock.Mock()
         mock_context.elevated.return_value = ctxt
 
+        mock_get_bdm_info.return_value = 'fake-bdm'
         mock_image_get.return_value = rescue_image_meta
 
         self.compute.rescue_instance(mock_context, instance=instance,
@@ -2288,13 +2291,15 @@ class ComputeTestCase(BaseTestCase):
         mock_image_get.assert_called_with(ctxt, image_ref)
         mock_rescue.assert_called_with(ctxt, instance, [],
                                        test.MatchType(objects.ImageMeta),
-                                       'password')
+                                       'password', 'fake-bdm')
         self.compute.terminate_instance(ctxt, instance, [], [])
 
     @mock.patch.object(image_api.API, "get")
+    @mock.patch.object(nova.compute.manager.ComputeManager,
+                       '_get_instance_block_device_info')
     @mock.patch.object(nova.virt.fake.FakeDriver, "rescue")
     def test_rescue_with_base_image_when_image_not_specified(self,
-            mock_rescue, mock_image_get):
+            mock_rescue, mock_get_bdm_info, mock_image_get):
         image_ref = "image-ref"
         system_meta = {"image_base_image_ref": image_ref}
         rescue_image_meta = {}
@@ -2306,6 +2311,7 @@ class ComputeTestCase(BaseTestCase):
         mock_context = mock.Mock()
         mock_context.elevated.return_value = ctxt
 
+        mock_get_bdm_info.return_value = 'fake-bdm'
         mock_image_get.return_value = rescue_image_meta
 
         self.compute.rescue_instance(mock_context, instance=instance,
@@ -2317,7 +2323,7 @@ class ComputeTestCase(BaseTestCase):
 
         mock_rescue.assert_called_with(ctxt, instance, [],
                                        test.MatchType(objects.ImageMeta),
-                                       'password')
+                                       'password', 'fake-bdm')
         self.compute.terminate_instance(self.context, instance, [], [])
 
     def test_power_on(self):
