@@ -2488,6 +2488,11 @@ class LibvirtDriver(driver.ComputeDriver):
         data recovery.
 
         """
+        if compute_utils.is_volume_backed_instance(context, instance):
+            reason = _("Cannot rescue a volume-backed instance")
+            raise exception.InstanceNotRescuable(instance_id=instance.uuid,
+                                                 reason=reason)
+
         instance_dir = libvirt_utils.get_instance_path(instance)
         unrescue_xml = self._get_existing_domain_xml(instance, network_info)
         unrescue_xml_path = os.path.join(instance_dir, 'unrescue.xml')

@@ -49,6 +49,7 @@ from nova import objects
 from nova.objects import base
 from nova import test
 from nova.tests.unit.db import fakes as db_fakes
+from nova.tests.unit import fake_block_device
 from nova.tests.unit import fake_flavor
 from nova.tests.unit import fake_instance
 from nova.tests.unit import fake_network
@@ -1293,6 +1294,23 @@ iface eth0 inet6 static
         self.assertEqual('4', vdi_refs[eph1_vdi_ref])
         self.assertEqual('5', vdi_refs[eph2_vdi_ref])
         self.assertNotIn(vol_vdi_ref, vdi_refs)
+
+    def test_rescue_volume_backed_instances_blocked(self):
+        instance = self._create_instance(spawn=False, obj=True)
+        bdms = objects.block_device.block_device_make_list(self.context,
+                    [fake_block_device.FakeDbBlockDeviceDict(
+                     {'device_name': '/dev/vda',
+                     'source_type': 'volume',
+                     'boot_index': 0,
+                     'destination_type': 'volume',
+                     'volume_id': 'bf0b6b00-a20c-11e2-9e96-0800200c9a66'})])
+        conn = xenapi_conn.XenAPIDriver(fake.FakeVirtAPI(), False)
+
+        with (mock.patch.object(objects.BlockDeviceMappingList,
+                'get_by_instance_uuid', return_value=bdms)):
+            self.assertRaises(exception.InstanceNotRescuable,
+                              conn.rescue, self.context, instance,
+                              None, None, None)
 
     def test_rescue_preserve_disk_on_failure(self):
         # test that the original disk is preserved if rescue setup fails

@@ -23,11 +23,13 @@ from oslo_vmware import vim_util as vutil
 import six
 
 from nova.compute import power_state
+from nova.compute import utils as compute_utils
 from nova import context
 from nova import exception
 from nova.network import model as network_model
 from nova import objects
 from nova import test
+from nova.tests.unit import fake_block_device
 from nova.tests.unit import fake_flavor
 from nova.tests.unit import fake_instance
 import nova.tests.unit.image.fake
@@ -414,6 +416,7 @@ class VMwareVMOpsTestCase(test.NoDBTestCase):
     def test_get_datacenter_ref_and_name_with_no_datastore(self):
         self._test_get_datacenter_ref_and_name()
 
+    @mock.patch.object(compute_utils, 'is_volume_backed_instance')
     @mock.patch('nova.image.api.API.get')
     @mock.patch.object(vm_util, 'power_off_instance')
     @mock.patch.object(ds_util, 'disk_copy')
@@ -426,7 +429,7 @@ class VMwareVMOpsTestCase(test.NoDBTestCase):
     def test_rescue(self, mock_get_ds_by_ref, mock_power_on, mock_reconfigure,
                     mock_get_boot_spec, mock_find_rescue,
                     mock_get_vm_ref, mock_disk_copy,
-                    mock_power_off, mock_glance):
+                    mock_power_off, mock_glance, mock_volume_backed):
         _volumeops = mock.Mock()
         self._vmops._volumeops = _volumeops
         ds_ref = vmwareapi_fake.ManagedObjectReference(value='fake-ref')
@@ -436,6 +439,7 @@ class VMwareVMOpsTestCase(test.NoDBTestCase):
         mock_get_boot_spec.return_value = 'fake-boot-spec'
         vm_ref = vmwareapi_fake.ManagedObjectReference()
         mock_get_vm_ref.return_value = vm_ref
+        mock_volume_backed.return_value = False
 
         device = vmwareapi_fake.DataObject()
         backing = vmwareapi_fake.DataObject()
@@ -476,6 +480,21 @@ class VMwareVMOpsTestCase(test.NoDBTestCase):
             mock_power_on.assert_called_once_with(self._session,
                                                   self._instance,
                                                   vm_ref=vm_ref)
+
+    def test_rescue_volume_backed_instances_blocked(self):
+        bdms = objects.block_device.block_device_make_list(self._context,
+                    [fake_block_device.FakeDbBlockDeviceDict(
+                     {'device_name': '/dev/vda',
+                     'source_type': 'volume',
+                     'boot_index': 0,
+                     'destination_type': 'volume',
+                     'volume_id': 'bf0b6b00-a20c-11e2-9e96-0800200c9a66'})])
+
+        with (mock.patch.object(objects.BlockDeviceMappingList,
+                                'get_by_instance_uuid', return_value=bdms)):
+            self.assertRaises(exception.InstanceNotRescuable,
+                              self._vmops.rescue, self._context,
+                              self._instance, None, None)
 
     def test_unrescue_power_on(self):
         self._test_unrescue(True)
