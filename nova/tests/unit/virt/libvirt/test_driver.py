@@ -14123,8 +14123,11 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
             'detach_interface', power_state.SHUTDOWN,
             expected_flags=(fakelibvirt.VIR_DOMAIN_AFFECT_CONFIG))
 
-    def test_rescue(self):
+    def _test_stable_rescue(self, image_meta_props_dict, expected_layout):
         instance = self._create_instance({'config_drive': None})
+        image_meta_props = objects.ImageMetaProps.from_dict(image_meta_props_dict)
+        image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        image_meta.properties = image_meta_props
         dummyxml = ("<domain type='kvm'><name>instance-0000000a</name>"
                     "<devices>"
                     "<disk type='file'><driver name='qemu' type='raw'/>"
@@ -14140,6 +14143,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.mox.StubOutWithMock(self.drvr,
                                      '_get_existing_domain_xml')
         self.mox.StubOutWithMock(libvirt_utils, 'write_to_file')
+        self.mox.StubOutWithMock(compute_utils, 'is_volume_backed_instance')
         self.mox.StubOutWithMock(imagebackend.Backend, 'image')
         self.mox.StubOutWithMock(imagebackend.Image, 'cache')
         self.mox.StubOutWithMock(self.drvr, '_get_guest_xml')
@@ -14154,6 +14158,10 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         libvirt_utils.write_to_file(mox.IgnoreArg(), mox.IgnoreArg())
         libvirt_utils.write_to_file(mox.IgnoreArg(), mox.IgnoreArg(),
                                mox.IgnoreArg())
+
+        self.drvr._is_volume_backed_instance(mox.IgnoreArg(),
+                                             mox.IgnoreArg()).AndReturn(False)
+
         imagebackend.Backend.image(instance, 'kernel.rescue', 'raw'
                                         ).AndReturn(fake_imagebackend.Raw())
         imagebackend.Backend.image(instance, 'ramdisk.rescue', 'raw'
@@ -14174,12 +14182,11 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                                 project_id=mox.IgnoreArg(),
                                 size=None, user_id=mox.IgnoreArg())
 
-        image_meta = objects.ImageMeta.from_dict(
-            {'id': 'fake', 'name': 'fake'})
         self.drvr._get_guest_xml(mox.IgnoreArg(), instance,
                                  network_info, mox.IgnoreArg(),
                                  image_meta,
                                  rescue=mox.IgnoreArg(),
+                                 block_device_info=mox.IgnoreArg(),
                                  write_to_disk=mox.IgnoreArg()
                              ).AndReturn(dummyxml)
 
@@ -14193,6 +14200,63 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.drvr.rescue(self.context, instance,
                     network_info, image_meta, rescue_password)
         self.mox.VerifyAll()
+
+    def test_stable_device_rescue(self):
+        expected_layout = (
+                "<devices>"
+                "<disk type='file'><driver name='qemu' type='raw'/>"
+                "<source file='/test/disk'/>"
+                "<target dev='vda' bus='virtio'/></disk>"
+                "<disk type='file'><driver name='qemu' type='qcow2'/>"
+                "<source file='/test/disk.local'/>"
+                "<target dev='vdb' bus='virtio'/></disk>"
+                "<disk boot_order='1' type='file'><driver name='qemu' type='qcow2'/>"
+                "<source file='/test/disk.rescue'/>"
+                "<target dev='vdc' bus='virtio' /></disk>"
+                "</devices></domain>")
+        image_meta_props_dict = {'hw_rescue_device': 'disk'}
+        self._test_stable_rescue(image_meta_props_dict, expected_layout)
+
+    def test_stable_device_rescue_usb(self):
+        expected_layout = (
+                "<devices>"
+                "<disk type='file'><driver name='qemu' type='raw'/>"
+                "<source file='/test/disk'/>"
+                "<target dev='vda' bus='virtio'/></disk>"
+                "<disk type='file'><driver name='qemu' type='qcow2'/>"
+                "<source file='/test/disk.local'/>"
+                "<target dev='vdb' bus='virtio'/></disk>"
+                "<disk boot_order='1' type='file'><driver name='qemu' type='qcow2'/>"
+                "<source file='/test/disk.rescue'/>"
+                "<target dev='hda' bus='virtio' /></disk>"
+                "</devices></domain>")
+        image_meta_props_dict = {'hw_rescue_device': 'usb'}
+        self._test_stable_rescue(image_meta_props_dict, expected_layout)
+        pass
+
+    def test_stable_device_rescue_cdrom(self):
+        pass
+
+    def test_stable_device_rescue_disk(self):
+        pass
+
+    def test_stable_device_rescue_disk_ide(self):
+        pass
+
+    def test_stable_device_rescue_fd(self):
+        pass
+
+    def test_unstable_device_rescue(self):
+        pass
+
+    def test_stable_device_rescue_bdm(self):
+        pass
+
+    def test_stable_device_rescue_unsuitable_bus(self):
+        # cdrom with a virtio bus
+        # usb with a virtio bus
+        # fd with a virtio bus
+        pass
 
     @mock.patch.object(libvirt_utils, 'get_instance_path')
     @mock.patch.object(libvirt_utils, 'load_file')
@@ -14257,6 +14321,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.mox.StubOutWithMock(self.drvr,
                                     '_get_existing_domain_xml')
         self.mox.StubOutWithMock(libvirt_utils, 'write_to_file')
+        self.mox.StubOutWithMock(compute_utils, 'is_volume_backed_instance')
         self.mox.StubOutWithMock(imagebackend.Backend, 'image')
         self.mox.StubOutWithMock(imagebackend.Image, 'cache')
         self.mox.StubOutWithMock(instance_metadata.InstanceMetadata,
@@ -14273,6 +14338,9 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         libvirt_utils.write_to_file(mox.IgnoreArg(), mox.IgnoreArg())
         libvirt_utils.write_to_file(mox.IgnoreArg(), mox.IgnoreArg(),
                                     mox.IgnoreArg())
+
+        self.drvr._is_volume_backed_instance(mox.IgnoreArg(),
+                                             mox.IgnoreArg()).AndReturn(False)
 
         imagebackend.Backend.image(instance, 'kernel.rescue', 'raw'
                                     ).AndReturn(fake_imagebackend.Raw())
@@ -14307,6 +14375,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                                  network_info, mox.IgnoreArg(),
                                  image_meta,
                                  rescue=mox.IgnoreArg(),
+                                 block_device_info=mox.IgnoreArg(),
                                  write_to_disk=mox.IgnoreArg()
                                 ).AndReturn(dummyxml)
         self.drvr._destroy(instance)
@@ -14325,7 +14394,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                                                 configdrive_path))]
         mock_make.assert_has_calls(expected_call)
 
-    def test_rescue_volume_backed_instances_blocked(self):
+    def test_unstable_device_rescue_volume_backed_instances_blocked(self):
         instance = self._create_instance()
         bdms = block_device_obj.block_device_make_list(self.context,
                     [fake_block_device.FakeDbBlockDeviceDict(
@@ -14333,7 +14402,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                      'source_type': 'volume',
                      'boot_index': 0,
                      'destination_type': 'volume',
-                     'volume_id': 'bf0b6b00-a20c-11e2-9e96-0800200c9a66'})])
+                     'volume_id': 'bf0b6b00-a20c-11e2-9e96-0800200c9a66'})])\
 
         with (mock.patch.object(objects.BlockDeviceMappingList,
                'get_by_instance_uuid', return_value=bdms)):
