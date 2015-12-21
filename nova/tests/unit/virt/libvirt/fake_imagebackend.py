@@ -42,7 +42,8 @@ class Backend(object):
                 pass
 
             def libvirt_info(self, disk_bus, disk_dev, device_type,
-                             cache_mode, extra_specs, hypervisor_version):
+                             cache_mode, extra_specs, hypervisor_version,
+                             boot_order):
                 info = config.LibvirtConfigGuestDisk()
                 info.source_type = 'file'
                 info.source_device = device_type
@@ -51,6 +52,7 @@ class Backend(object):
                 info.driver_cache = cache_mode
                 info.driver_format = 'raw'
                 info.source_path = self.path
+                info.boot_order = boot_order
                 return info
 
         return FakeImage(instance, name)

@@ -15182,18 +15182,14 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.assertIn('the device is no longer found on the guest',
                       six.text_type(mock_log.warning.call_args[0]))
 
-    def test_rescue(self):
+    def test_rescue_stable(self):
         instance = self._create_instance({'config_drive': None})
-        dummyxml = ("<domain type='kvm'><name>instance-0000000a</name>"
-                    "<devices>"
-                    "<disk type='file'><driver name='qemu' type='raw'/>"
-                    "<source file='/test/disk'/>"
-                    "<target dev='vda' bus='virtio'/></disk>"
-                    "<disk type='file'><driver name='qemu' type='qcow2'/>"
-                    "<source file='/test/disk.local'/>"
-                    "<target dev='vdb' bus='virtio'/></disk>"
-                    "</devices></domain>")
         network_info = _fake_network_info(self, 1)
+        rescue_image_props_dict = {'hw_rescue_device': 'disk'}
+        rescue_props = objects.ImageMetaProps.from_dict(
+            rescue_image_props_dict)
+        rescue_image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        rescue_image_meta.properties = rescue_props
 
         self.mox.StubOutWithMock(compute_utils, 'is_volume_backed_instance')
         self.mox.StubOutWithMock(self.drvr,
@@ -15221,26 +15217,131 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                                         ).AndReturn(mock_backend.ramdisk)
         imagebackend.Backend.image(instance, 'disk.rescue', 'default'
                                         ).AndReturn(mock_backend.root)
+        with test.nested(
+            mock.patch.object(self.drvr, '_get_existing_domain_xml'),
+            mock.patch.object(libvirt_utils, 'write_to_file'),
+            mock.patch.object(nova.image.api.API, 'get',
+                              return_value=self.test_image_meta),
+            mock.patch.object(blockinfo, 'get_disk_info'),
+            mock.patch.object(self.drvr, '_create_image'),
+            mock.patch.object(self.drvr, '_get_guest_xml'),
+            mock.patch.object(self.drvr, '_destroy'),
+            mock.patch.object(self.drvr, '_create_domain')
+            ) as (mock_existing_xml, mock_write_to_file, mock_image_api,
+                  mock_get_diskinfo, mock_create_image, mock_new_xml,
+                  mock_destroy, mock_create_domain):
 
-        image_meta = objects.ImageMeta.from_dict(
-            {'id': 'fake', 'name': 'fake'})
-        self.drvr._get_guest_xml(mox.IgnoreArg(), instance,
-                                 network_info, mox.IgnoreArg(),
-                                 image_meta,
-                                 rescue=mox.IgnoreArg(),
-                                 write_to_disk=mox.IgnoreArg()
-                             ).AndReturn(dummyxml)
+            self.drvr.rescue(self.context, instance, network_info,
+                             rescue_image_meta, 'fake-password')
+            mock_get_diskinfo.assert_called_once_with(mock.ANY, mock.ANY,
+                              mock.ANY, block_device_info=None, rescue=True,
+                              rescue_image_meta=rescue_image_meta)
 
-        self.drvr._destroy(instance)
-        self.drvr._create_domain(mox.IgnoreArg())
+    def test_rescue_stable_with_bdm(self):
+        instance = self._create_instance({'config_drive': None})
+        network_info = _fake_network_info(self, 1)
+        rescue_image_props_dict = {'hw_rescue_device': 'disk'}
+        rescue_props = objects.ImageMetaProps.from_dict(
+            rescue_image_props_dict)
+        rescue_image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        rescue_image_meta.properties = rescue_props
+        bdms = block_device_obj.block_device_make_list(self.context,
+                    [fake_block_device.FakeDbBlockDeviceDict(
+                     {'device_name': '/dev/vda',
+                     'source_type': 'volume',
+                     'boot_index': 0,
+                     'destination_type': 'volume',
+                     'volume_id': 'bf0b6b00-a20c-11e2-9e96-0800200c9a66'})])\
 
-        self.mox.ReplayAll()
+        with test.nested(
+            mock.patch.object(self.drvr, '_get_existing_domain_xml'),
+            mock.patch.object(libvirt_utils, 'write_to_file'),
+            mock.patch.object(nova.image.api.API, 'get',
+                              return_value=self.test_image_meta),
+            mock.patch.object(blockinfo, 'get_disk_info'),
+            mock.patch.object(self.drvr, '_create_image'),
+            mock.patch.object(self.drvr, '_get_guest_xml'),
+            mock.patch.object(self.drvr, '_destroy'),
+            mock.patch.object(self.drvr, '_create_domain')
+            ) as (mock_existing_xml, mock_write_to_file, mock_image_api,
+                  mock_get_diskinfo, mock_create_image, mock_new_xml,
+                  mock_destroy, mock_create_domain):
+            self.drvr.rescue(self.context, instance, network_info,
+                             rescue_image_meta, 'fake-password',
+                             block_device_info=bdms)
+            mock_get_diskinfo.assert_called_once_with(mock.ANY, mock.ANY,
+                              mock.ANY, block_device_info=bdms, rescue=True,
+                              rescue_image_meta=rescue_image_meta)
 
-        rescue_password = 'fake_password'
+    def test_rescue_stable_with_invalid_virt_type(self):
+        instance = self._create_instance({'config_drive': None})
+        network_info = _fake_network_info(self, 1)
+        rescue_image_props_dict = {'hw_rescue_device': 'disk'}
+        rescue_props = objects.ImageMetaProps.from_dict(
+            rescue_image_props_dict)
+        rescue_image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        rescue_image_meta.properties = rescue_props
 
-        self.drvr.rescue(self.context, instance,
-                    network_info, image_meta, rescue_password)
-        self.mox.VerifyAll()
+        with test.nested(
+            mock.patch.object(self.drvr, '_get_existing_domain_xml'),
+            mock.patch.object(libvirt_utils, 'write_to_file'),
+            mock.patch.object(nova.image.api.API, 'get',
+                              return_value=self.test_image_meta),
+        ) as (mock_existing_xml, mock_write_to_file, mock_image_api):
+            self.flags(virt_type='lxc', group='libvirt')
+            self.assertRaises(exception.InstanceNotRescuable,
+                              self.drvr.rescue, self.context, instance,
+                              network_info, rescue_image_meta, 'fake-password')
+
+    def test_rescue_unstable(self):
+        instance = self._create_instance({'config_drive': None})
+        network_info = _fake_network_info(self, 1)
+        rescue_image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+
+        with test.nested(
+            mock.patch.object(self.drvr, '_get_existing_domain_xml'),
+            mock.patch.object(libvirt_utils, 'write_to_file'),
+            mock.patch.object(nova.image.api.API, 'get',
+                              return_value=self.test_image_meta),
+            mock.patch.object(compute_utils, 'is_volume_backed_instance',
+                              return_value=False),
+            mock.patch.object(blockinfo, 'get_disk_info'),
+            mock.patch.object(self.drvr, '_create_image'),
+            mock.patch.object(self.drvr, '_get_guest_xml'),
+            mock.patch.object(self.drvr, '_destroy'),
+            mock.patch.object(self.drvr, '_create_domain')
+            ) as (mock_existing_xml, mock_write_to_file, mock_image_api,
+                  mock_volume_backed, mock_get_diskinfo, mock_create_image,
+                  mock_new_xml, mock_destroy, mock_create_domain):
+
+            self.drvr.rescue(self.context, instance, network_info,
+                             rescue_image_meta, 'fake-password')
+            mock_get_diskinfo.assert_called_once_with(mock.ANY, mock.ANY,
+                              mock.ANY, block_device_info=None, rescue=True,
+                              rescue_image_meta=None)
+
+    def test_rescue_unstable_with_bdm(self):
+        instance = self._create_instance({'config_drive': None})
+        network_info = _fake_network_info(self, 1)
+        rescue_image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        bdms = block_device_obj.block_device_make_list(self.context,
+                    [fake_block_device.FakeDbBlockDeviceDict(
+                     {'device_name': '/dev/vda',
+                     'source_type': 'volume',
+                     'boot_index': 0,
+                     'destination_type': 'volume',
+                     'volume_id': 'bf0b6b00-a20c-11e2-9e96-0800200c9a66'})])\
+
+        with test.nested(
+            mock.patch.object(self.drvr, '_get_existing_domain_xml'),
+            mock.patch.object(libvirt_utils, 'write_to_file'),
+            mock.patch.object(nova.image.api.API, 'get',
+                              return_value=self.test_image_meta),
+            mock.patch.object(objects.BlockDeviceMappingList,
+                              'get_by_instance_uuid', return_value=bdms)):
+            self.assertRaises(exception.InstanceNotRescuable,
+                              self.drvr.rescue, self.context, instance,
+                              network_info, rescue_image_meta, 'fake-password')
 
         # cache() should have been called on the 3 disk backends
         for backend in (mock_backend.kernel, mock_backend.ramdisk,
@@ -15309,10 +15410,10 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                     "</devices></domain>")
         network_info = _fake_network_info(self, 1)
 
-        self.mox.StubOutWithMock(compute_utils, 'is_volume_backed_instance')
         self.mox.StubOutWithMock(self.drvr,
                                     '_get_existing_domain_xml')
         self.mox.StubOutWithMock(libvirt_utils, 'write_to_file')
+        self.mox.StubOutWithMock(compute_utils, 'is_volume_backed_instance')
         self.mox.StubOutWithMock(imagebackend.Backend, 'image')
         self.mox.StubOutWithMock(imagebackend.Image, 'cache')
         self.mox.StubOutWithMock(instance_metadata.InstanceMetadata,
@@ -15321,9 +15422,6 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.mox.StubOutWithMock(self.drvr, '_destroy')
         self.mox.StubOutWithMock(self.drvr, '_create_domain')
 
-        compute_utils.is_volume_backed_instance(mox.IgnoreArg(),
-                                                mox.IgnoreArg()
-                                                ).AndReturn(False)
         self.drvr._get_existing_domain_xml(mox.IgnoreArg(),
                     mox.IgnoreArg()).MultipleTimes().AndReturn(dummyxml)
         libvirt_utils.write_to_file(mox.IgnoreArg(), mox.IgnoreArg())
@@ -15331,6 +15429,9 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                                     mox.IgnoreArg())
 
         mock_backend = mock.MagicMock()
+        compute_utils.is_volume_backed_instance(mox.IgnoreArg(),
+                      mox.IgnoreArg()).AndReturn(False)
+
         imagebackend.Backend.image(instance, 'kernel.rescue', 'raw'
                                     ).AndReturn(mock_backend.kernel)
         imagebackend.Backend.image(instance, 'ramdisk.rescue', 'raw'
@@ -15350,6 +15451,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                                  network_info, mox.IgnoreArg(),
                                  image_meta,
                                  rescue=mox.IgnoreArg(),
+                                 block_device_info=mox.IgnoreArg(),
                                  write_to_disk=mox.IgnoreArg()
                                 ).AndReturn(dummyxml)
         self.drvr._destroy(instance)

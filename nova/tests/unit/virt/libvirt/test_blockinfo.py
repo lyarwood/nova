@@ -74,7 +74,7 @@ class LibvirtBlockInfoTest(test.NoDBTestCase):
         self.test_instance['old_flavor'] = None
         self.test_instance['new_flavor'] = None
 
-    def test_volume_in_mapping(self):
+    def _test_block_device_info(self):
         swap = {'device_name': '/dev/sdb',
                 'swap_size': 1}
         ephemerals = [{'device_type': 'disk', 'guest_format': 'ext4',
@@ -85,11 +85,14 @@ class LibvirtBlockInfoTest(test.NoDBTestCase):
                                  'device_path': 'fake_device'},
                                 {'mount_device': '/dev/sdf',
                                  'device_path': 'fake_device'}]
-        block_device_info = {
-                'root_device_name': '/dev/sda',
+
+        return {'root_device_name': '/dev/sda',
                 'swap': swap,
                 'ephemerals': ephemerals,
                 'block_device_mapping': block_device_mapping}
+
+    def test_volume_in_mapping(self):
+        block_device_info = self._test_block_device_info()
 
         def _assert_volume_in_mapping(device_name, true_or_false):
             self.assertEqual(
@@ -225,7 +228,7 @@ class LibvirtBlockInfoTest(test.NoDBTestCase):
         self.assertEqual(expect, mapping)
 
     def test_get_disk_mapping_rescue(self):
-        # A simple disk mapping setup, but in rescue mode
+        # A simple disk mapping setup, but in the unstable legacy rescue mode
 
         instance_ref = objects.Instance()
         image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
@@ -243,6 +246,144 @@ class LibvirtBlockInfoTest(test.NoDBTestCase):
                      'type': 'disk', 'boot_index': '1'},
             }
         self.assertEqual(expect, mapping)
+
+    def _test_get_disk_mapping_stable_rescue(self, rescue_props, expect,
+                                             block_info=None):
+
+        instance = objects.Instance(**self.test_instance)
+        image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+
+        rescue_image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        rescue_props = objects.ImageMetaProps.from_dict(rescue_props)
+        rescue_image_meta.properties = rescue_props
+
+        mapping = blockinfo.get_disk_mapping("kvm", instance, "virtio", "ide",
+                      image_meta, rescue=True, block_device_info=block_info,
+                      rescue_image_meta=rescue_image_meta)
+
+        self.assertEqual(expect, mapping)
+
+    def test_get_disk_mapping_stable_rescue_virtio_disk(self):
+
+        rescue_props = {'hw_rescue_bus': 'virtio'}
+
+        expect = {
+            'disk': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'},
+            'disk.local': {'bus': 'virtio', 'dev': 'vdb', 'type': 'disk'},
+            'disk.rescue': {'bus': 'virtio', 'dev': 'vdc', 'type': 'disk'},
+            'root': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'}
+        }
+
+        self._test_get_disk_mapping_stable_rescue(rescue_props, expect)
+
+    def test_get_disk_mapping_stable_rescue_virtio_disk_with_bdm(self):
+
+        rescue_props = {'hw_rescue_bus': 'virtio'}
+        block_info = self._test_block_device_info()
+
+        expect = {
+            '/dev/sde': {
+                'bus': 'scsi', 'dev': 'sde', 'type': 'disk'},
+            '/dev/sdf': {
+                'bus': 'scsi', 'dev': 'sdf', 'type': 'disk'},
+            'disk': {
+                'boot_index': '1', 'bus': 'scsi', 'dev': 'sda',
+                'type': 'disk'},
+            'disk.eph0': {
+                'bus': 'virtio', 'dev': 'sdc1', 'format': 'ext4',
+                'type': 'disk'},
+            'disk.eph1': {
+                'bus': 'ide', 'dev': 'sdd', 'type': 'disk'},
+            'disk.rescue': {
+                'bus': 'virtio', 'dev': 'vda', 'type': 'disk'},
+            'disk.swap': {
+                'bus': 'virtio', 'dev': 'sdb', 'type': 'disk'},
+            'root': {
+                'boot_index': '1', 'bus': 'scsi', 'dev': 'sda',
+                'type': 'disk'}
+        }
+
+        self._test_get_disk_mapping_stable_rescue(rescue_props, expect,
+                                                  block_info=block_info)
+
+    def test_get_disk_mapping_stable_rescue_ide_disk(self):
+
+        rescue_props = {'hw_rescue_bus': 'ide'}
+
+        expect = {
+            'disk': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'},
+            'disk.local': {'bus': 'virtio', 'dev': 'vdb', 'type': 'disk'},
+            'disk.rescue': {'bus': 'ide', 'dev': 'hda', 'type': 'disk'},
+            'root': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'}
+        }
+
+        self._test_get_disk_mapping_stable_rescue(rescue_props, expect)
+
+    def test_get_disk_mapping_stable_rescue_usb_disk(self):
+
+        rescue_props = {'hw_rescue_bus': 'usb'}
+
+        expect = {
+            'disk': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'},
+            'disk.local': {'bus': 'virtio', 'dev': 'vdb', 'type': 'disk'},
+            'disk.rescue': {'bus': 'usb', 'dev': 'sda', 'type': 'disk'},
+            'root': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'}
+        }
+
+        self._test_get_disk_mapping_stable_rescue(rescue_props,
+                                                  expect)
+
+    def test_get_disk_mapping_stable_rescue_ide_cdrom(self):
+
+        rescue_props = {'hw_rescue_device': 'cdrom'}
+
+        expect = {
+            'disk': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'},
+            'disk.local': {'bus': 'virtio', 'dev': 'vdb', 'type': 'disk'},
+            'disk.rescue': {'bus': 'ide', 'dev': 'hda', 'type': 'cdrom'},
+            'root': {'boot_index': '1', 'bus': 'virtio', 'dev': 'vda',
+                     'type': 'disk'}
+        }
+
+        self._test_get_disk_mapping_stable_rescue(rescue_props,
+                                                  expect)
+
+    def test_get_disk_mapping_stable_rescue_ide_cdrom_with_bdm(self):
+
+        rescue_props = {'hw_rescue_device': 'cdrom'}
+        block_info = self._test_block_device_info()
+
+        expect = {
+            '/dev/sde': {
+                'bus': 'scsi', 'dev': 'sde', 'type': 'disk'},
+            '/dev/sdf': {
+                'bus': 'scsi', 'dev': 'sdf', 'type': 'disk'},
+            'disk': {
+                'boot_index': '1', 'bus': 'scsi', 'dev': 'sda',
+                'type': 'disk'},
+            'disk.eph0': {
+                'bus': 'virtio', 'dev': 'sdc1', 'format': 'ext4',
+                'type': 'disk'},
+            'disk.eph1': {
+                'bus': 'ide', 'dev': 'sdd', 'type': 'disk'},
+            'disk.rescue': {
+                'bus': 'ide', 'dev': 'hda', 'type': 'cdrom'},
+            'disk.swap': {
+                'bus': 'virtio', 'dev': 'sdb', 'type': 'disk'},
+            'root': {
+                'boot_index': '1', 'bus': 'scsi', 'dev': 'sda',
+                'type': 'disk'}
+        }
+
+        self._test_get_disk_mapping_stable_rescue(rescue_props, expect,
+                                                  block_info=block_info)
 
     def test_get_disk_mapping_lxc(self):
         # A simple disk mapping setup, but for lxc

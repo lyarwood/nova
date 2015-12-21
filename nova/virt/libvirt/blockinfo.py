@@ -218,6 +218,33 @@ def is_disk_bus_valid_for_virt(virt_type, disk_bus):
     return disk_bus in valid_bus[virt_type]
 
 
+def get_rescue_device(rescue_image_meta):
+    """Fetch the rescue device type and ensure it is supported.
+    """
+    rescue_device = rescue_image_meta.properties.get("hw_rescue_device",
+                                                          "disk")
+    if rescue_device not in SUPPORTED_DEVICE_TYPES:
+        raise exception.UnsupportedHardware(device_type=rescue_device)
+    return rescue_device
+
+
+def get_rescue_bus_for_device_type(instance,
+                                   virt_type,
+                                   rescue_image_meta,
+                                   rescue_device):
+    """If provided ensure the rescue bus is supported by the virt_type.
+       If it is not provided use the default bus for the device type provided.
+    """
+    rescue_bus = rescue_image_meta.properties.get("hw_rescue_bus")
+    if rescue_bus is not None:
+        if not is_disk_bus_valid_for_virt(virt_type, rescue_bus):
+            raise exception.UnsupportedHardware(model=rescue_bus,
+                                                virt=virt_type)
+        return rescue_bus
+    return get_disk_bus_for_device_type(instance, virt_type, rescue_image_meta,
+                                        device_type=rescue_device)
+
+
 def get_disk_bus_for_device_type(instance,
                                  virt_type,
                                  image_meta,
@@ -500,7 +527,8 @@ def get_disk_mapping(virt_type, instance,
                      disk_bus, cdrom_bus,
                      image_meta,
                      block_device_info=None,
-                     rescue=False):
+                     rescue=False,
+                     rescue_image_meta=None):
     """Determine how to map default disks to the virtual machine.
 
        This is about figuring out whether the default 'disk',
@@ -512,16 +540,14 @@ def get_disk_mapping(virt_type, instance,
 
     mapping = {}
 
-    if rescue:
-        rescue_info = get_next_disk_info(mapping,
-                                         disk_bus, boot_index=1)
+    # unstable device rescue
+    if rescue and not rescue_image_meta:
+        rescue_info = get_next_disk_info(mapping, disk_bus, boot_index=1)
         mapping['disk.rescue'] = rescue_info
         mapping['root'] = rescue_info
-
         os_info = get_next_disk_info(mapping,
                                      disk_bus)
         mapping['disk'] = os_info
-
         return mapping
 
     pre_assigned_device_names = \
@@ -608,11 +634,25 @@ def get_disk_mapping(virt_type, instance,
                                          last_device=True)
         mapping['disk.config'] = config_info
 
+    # stable device rescue
+    if rescue and rescue_image_meta:
+        rescue_device = get_rescue_device(rescue_image_meta)
+        rescue_bus = get_rescue_bus_for_device_type(instance,
+                                                         virt_type,
+                                                         rescue_image_meta,
+                                                         rescue_device)
+
+        config_rescue = get_next_disk_info(mapping,
+                                           rescue_bus,
+                                           device_type=rescue_device)
+        mapping['disk.rescue'] = config_rescue
+
     return mapping
 
 
 def get_disk_info(virt_type, instance, image_meta,
-                  block_device_info=None, rescue=False):
+                  block_device_info=None, rescue=False,
+                  rescue_image_meta=None):
     """Determine guest disk mapping info.
 
        This is a wrapper around get_disk_mapping, which
@@ -634,7 +674,8 @@ def get_disk_info(virt_type, instance, image_meta,
                                disk_bus, cdrom_bus,
                                image_meta,
                                block_device_info,
-                               rescue)
+                               rescue,
+                               rescue_image_meta)
 
     return {'disk_bus': disk_bus,
             'cdrom_bus': cdrom_bus,

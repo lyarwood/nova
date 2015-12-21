@@ -652,6 +652,19 @@ class ComputeUtilsTestCase(test.NoDBTestCase):
             self.assertEqual([], addresses)
         mock_ifaddresses.assert_called_once_with(iface)
 
+    def test_check_hw_rescue_props(self):
+        image_meta = objects.ImageMeta.from_dict(
+                                    {'disk_format': 'raw'})
+        image_meta_props = objects.ImageMetaProps.from_dict(
+                                    {'hw_rescue_device': 'disk'})
+        image_meta.properties = image_meta_props
+        self.assertTrue(compute_utils.check_hw_rescue_props(image_meta))
+
+        image_meta_props = objects.ImageMetaProps.from_dict(
+                                    {'hw_disk_bus': 'ide'})
+        image_meta.properties = image_meta_props
+        self.assertFalse(compute_utils.check_hw_rescue_props(image_meta))
+
 
 class ComputeUtilsQuotaDeltaTestCase(test.TestCase):
     def setUp(self):
