@@ -40,6 +40,7 @@ from nova.api.metadata import base as instance_metadata
 from nova import compute
 from nova.compute import power_state
 from nova.compute import task_states
+from nova.compute import utils as compute_utils
 from nova.console import type as ctype
 from nova import context as nova_context
 from nova import exception
@@ -1165,6 +1166,11 @@ class VMwareVMOps(object):
 
         Attach the image that the instance was created from and boot from it.
         """
+        if compute_utils.is_volume_backed_instance(context, instance):
+            reason = _("Cannot rescue a volume-backed instance")
+            raise exception.InstanceNotRescuable(instance_id=instance.uuid,
+                                                 reason=reason)
+
         vm_ref = vm_util.get_vm_ref(self._session, instance)
 
         # Get the root disk vmdk object

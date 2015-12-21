@@ -2765,10 +2765,6 @@ class API(base.Base):
             if bdm.volume_id:
                 vol = self.volume_api.get(context, bdm.volume_id)
                 self.volume_api.check_attached(context, vol)
-        if compute_utils.is_volume_backed_instance(context, instance, bdms):
-            reason = _("Cannot rescue a volume-backed instance")
-            raise exception.InstanceNotRescuable(instance_id=instance.uuid,
-                                                 reason=reason)
 
         instance.task_state = task_states.RESCUING
         instance.save(expected_task_state=[None])

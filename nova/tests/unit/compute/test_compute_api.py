@@ -2810,15 +2810,13 @@ class _ComputeAPIUnitTestMixIn(object):
         with test.nested(
             mock.patch.object(objects.BlockDeviceMappingList,
                               'get_by_instance_uuid', return_value=bdms),
-            mock.patch.object(compute_utils, 'is_volume_backed_instance',
-                              return_value=False),
             mock.patch.object(instance, 'save'),
             mock.patch.object(self.compute_api, '_record_action_start'),
             mock.patch.object(self.compute_api.compute_rpcapi,
                               'rescue_instance')
         ) as (
-            bdm_get_by_instance_uuid, volume_backed_inst, instance_save,
-            record_action_start, rpcapi_rescue_instance
+            bdm_get_by_instance_uuid, instance_save, record_action_start,
+            rpcapi_rescue_instance
         ):
             self.compute_api.rescue(self.context, instance,
                                     rescue_password=rescue_password,
@@ -2829,8 +2827,6 @@ class _ComputeAPIUnitTestMixIn(object):
             # assert our mock calls
             bdm_get_by_instance_uuid.assert_called_once_with(
                 self.context, instance.uuid)
-            volume_backed_inst.assert_called_once_with(
-                self.context, instance, bdms)
             instance_save.assert_called_once_with(expected_task_state=[None])
             record_action_start.assert_called_once_with(
                 self.context, instance, instance_actions.RESCUE)

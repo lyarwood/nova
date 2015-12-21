@@ -8111,49 +8111,6 @@ class ComputeAPITestCase(BaseTestCase):
 
         return fake_bdms, volume
 
-    @mock.patch.object(objects.BlockDeviceMappingList, 'get_by_instance_uuid')
-    @mock.patch.object(cinder.API, 'get')
-    def test_rescue_volume_backed_no_image(self, mock_get_vol, mock_get_bdms):
-        # Instance started without an image
-        params = {'image_ref': ''}
-        volume_backed_inst_1 = self._create_fake_instance_obj(params=params)
-        bdms, volume = self._fake_rescue_block_devices(volume_backed_inst_1)
-
-        mock_get_vol.return_value = {'id': volume['id'], 'status': "in-use"}
-        mock_get_bdms.return_value = bdms
-
-        with mock.patch.object(self.compute, '_prep_block_device'):
-            self.compute.build_and_run_instance(self.context,
-                                        volume_backed_inst_1, {}, {}, {},
-                                        block_device_mapping=[])
-
-        self.assertRaises(exception.InstanceNotRescuable,
-                          self.compute_api.rescue, self.context,
-                          volume_backed_inst_1)
-
-    @mock.patch.object(objects.BlockDeviceMappingList, 'get_by_instance_uuid')
-    @mock.patch.object(cinder.API, 'get')
-    def test_rescue_volume_backed_placeholder_image(self,
-                                                    mock_get_vol,
-                                                    mock_get_bdms):
-        # Instance started with a placeholder image (for metadata)
-        volume_backed_inst_2 = self._create_fake_instance_obj(
-                {'image_ref': 'my_placeholder_img',
-                 'root_device_name': '/dev/vda'})
-        bdms, volume = self._fake_rescue_block_devices(volume_backed_inst_2)
-
-        mock_get_vol.return_value = {'id': volume['id'], 'status': "in-use"}
-        mock_get_bdms.return_value = bdms
-
-        with mock.patch.object(self.compute, '_prep_block_device'):
-            self.compute.build_and_run_instance(self.context,
-                                        volume_backed_inst_2, {}, {}, {},
-                                        block_device_mapping=[])
-
-        self.assertRaises(exception.InstanceNotRescuable,
-                          self.compute_api.rescue, self.context,
-                          volume_backed_inst_2)
-
     def test_get(self):
         # Test get instance.
         exp_instance = self._create_fake_instance_obj()

@@ -56,6 +56,7 @@ from nova.compute import cpumodel
 from nova.compute import manager
 from nova.compute import power_state
 from nova.compute import task_states
+from nova.compute import utils as compute_utils
 from nova.compute import vm_mode
 from nova.compute import vm_states
 from nova import context
@@ -14135,6 +14136,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                     "</devices></domain>")
         network_info = _fake_network_info(self, 1)
 
+        self.mox.StubOutWithMock(compute_utils, 'is_volume_backed_instance')
         self.mox.StubOutWithMock(self.drvr,
                                      '_get_existing_domain_xml')
         self.mox.StubOutWithMock(libvirt_utils, 'write_to_file')
@@ -14144,6 +14146,9 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.mox.StubOutWithMock(self.drvr, '_destroy')
         self.mox.StubOutWithMock(self.drvr, '_create_domain')
 
+        compute_utils.is_volume_backed_instance(mox.IgnoreArg(),
+                                                mox.IgnoreArg()
+                                                ).AndReturn(False)
         self.drvr._get_existing_domain_xml(mox.IgnoreArg(),
                         mox.IgnoreArg()).MultipleTimes().AndReturn(dummyxml)
         libvirt_utils.write_to_file(mox.IgnoreArg(), mox.IgnoreArg())
@@ -14248,6 +14253,7 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                     "</devices></domain>")
         network_info = _fake_network_info(self, 1)
 
+        self.mox.StubOutWithMock(compute_utils, 'is_volume_backed_instance')
         self.mox.StubOutWithMock(self.drvr,
                                     '_get_existing_domain_xml')
         self.mox.StubOutWithMock(libvirt_utils, 'write_to_file')
@@ -14259,6 +14265,9 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.mox.StubOutWithMock(self.drvr, '_destroy')
         self.mox.StubOutWithMock(self.drvr, '_create_domain')
 
+        compute_utils.is_volume_backed_instance(mox.IgnoreArg(),
+                                                mox.IgnoreArg()
+                                                ).AndReturn(False)
         self.drvr._get_existing_domain_xml(mox.IgnoreArg(),
                     mox.IgnoreArg()).MultipleTimes().AndReturn(dummyxml)
         libvirt_utils.write_to_file(mox.IgnoreArg(), mox.IgnoreArg())
@@ -14315,6 +14324,22 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         expected_call = [mock.call(os.path.join(CONF.instances_path,
                                                 configdrive_path))]
         mock_make.assert_has_calls(expected_call)
+
+    def test_rescue_volume_backed_instances_blocked(self):
+        instance = self._create_instance()
+        bdms = block_device_obj.block_device_make_list(self.context,
+                    [fake_block_device.FakeDbBlockDeviceDict(
+                     {'device_name': '/dev/vda',
+                     'source_type': 'volume',
+                     'boot_index': 0,
+                     'destination_type': 'volume',
+                     'volume_id': 'bf0b6b00-a20c-11e2-9e96-0800200c9a66'})])
+
+        with (mock.patch.object(objects.BlockDeviceMappingList,
+               'get_by_instance_uuid', return_value=bdms)):
+            self.assertRaises(exception.InstanceNotRescuable,
+                              self.drvr.rescue, self.context, instance,
+                              None, None, None)
 
     @mock.patch('shutil.rmtree')
     @mock.patch('nova.utils.execute')
