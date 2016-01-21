@@ -8979,7 +8979,7 @@ class ComputeAPITestCase(BaseTestCase):
 
         instance = self._create_fake_instance_obj({'image_ref': ''})
         self.assertTrue(
-            self.compute_api.is_volume_backed_instance(ctxt, instance, None))
+            compute_utils.is_volume_backed_instance(ctxt, instance, None))
 
     def test_is_volume_backed_instance_empty_bdm_with_image(self):
         ctxt = self.context
@@ -8988,7 +8988,7 @@ class ComputeAPITestCase(BaseTestCase):
             'image_ref': FAKE_IMAGE_REF
         })
         self.assertFalse(
-            self.compute_api.is_volume_backed_instance(
+            compute_utils.is_volume_backed_instance(
                 ctxt, instance,
                 block_device_obj.block_device_make_list(ctxt, [])))
 
@@ -9008,7 +9008,7 @@ class ComputeAPITestCase(BaseTestCase):
                                  'boot_index': 0,
                                  'destination_type': 'volume'})])
         self.assertTrue(
-            self.compute_api.is_volume_backed_instance(ctxt, instance, bdms))
+            compute_utils.is_volume_backed_instance(ctxt, instance, bdms))
 
     def test_is_volume_backed_instance_bdm_local_no_image(self):
         # if the root device is local the instance is not volume backed, even
@@ -9036,7 +9036,7 @@ class ComputeAPITestCase(BaseTestCase):
                  'volume_id': 'c2ec2156-d75e-11e2-985b-5254009297d6',
                  'snapshot_id': None})])
         self.assertFalse(
-            self.compute_api.is_volume_backed_instance(ctxt, instance, bdms))
+            compute_utils.is_volume_backed_instance(ctxt, instance, bdms))
 
     def test_is_volume_backed_instance_bdm_volume_with_image(self):
         ctxt = self.context
@@ -9052,7 +9052,7 @@ class ComputeAPITestCase(BaseTestCase):
                                  'boot_index': 0,
                                  'destination_type': 'volume'})])
         self.assertTrue(
-            self.compute_api.is_volume_backed_instance(ctxt, instance, bdms))
+            compute_utils.is_volume_backed_instance(ctxt, instance, bdms))
 
     def test_is_volume_backed_instance_bdm_snapshot(self):
         ctxt = self.context
@@ -9067,7 +9067,7 @@ class ComputeAPITestCase(BaseTestCase):
                  'boot_index': 0,
                  'volume_id': None})])
         self.assertTrue(
-            self.compute_api.is_volume_backed_instance(ctxt, instance, bdms))
+            compute_utils.is_volume_backed_instance(ctxt, instance, bdms))
 
     @mock.patch.object(objects.BlockDeviceMappingList, 'get_by_instance_uuid')
     def test_is_volume_backed_instance_empty_bdm_by_uuid(self, mock_bdms):
@@ -9076,7 +9076,7 @@ class ComputeAPITestCase(BaseTestCase):
         mock_bdms.return_value = \
             block_device_obj.block_device_make_list(ctxt, [])
         self.assertFalse(
-            self.compute_api.is_volume_backed_instance(ctxt, instance, None))
+            compute_utils.is_volume_backed_instance(ctxt, instance, None))
         mock_bdms.assert_called_with(ctxt, instance.uuid)
 
     def test_reservation_id_one_instance(self):
