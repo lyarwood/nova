@@ -49,6 +49,7 @@ from nova import availability_zones
 from nova.compute import api as compute_api
 from nova.compute import flavors
 from nova.compute import task_states
+from nova.compute import utils as compute_utils
 from nova.compute import vm_states
 from nova import context
 from nova import db
@@ -3970,7 +3971,7 @@ class ServersPolicyEnforcementV21(test.NoDBTestCase):
             rule, rule_name, self.controller._action_create_image,
             self.req, FAKE_UUID, body=body)
 
-    @mock.patch.object(compute_api.API, 'is_volume_backed_instance',
+    @mock.patch.object(compute_utils, 'is_volume_backed_instance',
                        return_value=True)
     @mock.patch.object(objects.BlockDeviceMappingList, 'get_by_instance_uuid')
     @mock.patch.object(servers.ServersController, '_get_server')
@@ -3995,7 +3996,7 @@ class ServersPolicyEnforcementV21(test.NoDBTestCase):
             rules, rule_name, self.controller._action_create_image,
             self.req, FAKE_UUID, body=body)
 
-    @mock.patch.object(compute_api.API, 'is_volume_backed_instance',
+    @mock.patch.object(compute_utils, 'is_volume_backed_instance',
                        return_value=True)
     @mock.patch.object(objects.BlockDeviceMappingList, 'get_by_instance_uuid')
     @mock.patch.object(servers.ServersController, '_get_server')

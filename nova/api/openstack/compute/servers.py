@@ -1070,7 +1070,7 @@ class ServersController(wsgi.Controller):
                     context, instance.uuid)
 
         try:
-            if self.compute_api.is_volume_backed_instance(context, instance,
+            if compute.utils.is_volume_backed_instance(context, instance,
                                                           bdms):
                 authorize(context, action="create_image:allow_volume_backed")
                 image = self.compute_api.snapshot_volume_backed(

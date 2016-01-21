@@ -28,6 +28,7 @@ from nova.api.openstack.compute.legacy_v2 import servers as servers_v2
 from nova.api.openstack.compute import servers as servers_v21
 from nova.compute import api as compute_api
 from nova.compute import task_states
+from nova.compute import utils as compute_utils
 from nova.compute import vm_states
 from nova import db
 from nova import exception
@@ -1329,7 +1330,7 @@ class ServerActionsControllerTestV2(ServerActionsControllerTestV21):
                 "compute:get": ""
         }
         policy.set_rules(oslo_policy.Rules.from_dict(rules))
-        with mock.patch.object(compute_api.API, 'is_volume_backed_instance',
+        with mock.patch.object(compute_utils, 'is_volume_backed_instance',
                                return_value=True):
             exc = self.assertRaises(exception.PolicyNotAuthorized,
                               self.controller._action_create_image,
@@ -1353,7 +1354,7 @@ class ServerActionsControllerTestV2(ServerActionsControllerTestV21):
                 "compute:get": ""
         }
         policy.set_rules(oslo_policy.Rules.from_dict(rules))
-        with mock.patch.object(compute_api.API, 'is_volume_backed_instance',
+        with mock.patch.object(compute_utils, 'is_volume_backed_instance',
                                return_value=True):
             exc = self.assertRaises(exception.PolicyNotAuthorized,
                               self.controller._action_create_image,

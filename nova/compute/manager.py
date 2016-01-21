@@ -5082,7 +5082,7 @@ class ComputeManager(manager.Manager):
         :param dest_check_data: result of check_can_live_migrate_destination
         :returns: a dict containing migration info
         """
-        is_volume_backed = self.compute_api.is_volume_backed_instance(ctxt,
+        is_volume_backed = compute_utils.is_volume_backed_instance(ctxt,
                                                                       instance)
         dest_check_data['is_volume_backed'] = is_volume_backed
         block_device_info = self._get_instance_block_device_info(

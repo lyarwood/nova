@@ -486,7 +486,7 @@ class _ComputeAPIUnitTestMixIn(object):
                       display_name='fake-name')
         instance = self._create_instance_obj(params=params)
         with test.nested(
-            mock.patch.object(self.compute_api, 'is_volume_backed_instance',
+            mock.patch.object(compute_utils, 'is_volume_backed_instance',
                               return_value=boot_from_volume),
             mock.patch.object(self.compute_api, '_create_image',
                               return_value=dict(id='fake-image-id')),
@@ -1533,7 +1533,7 @@ class _ComputeAPIUnitTestMixIn(object):
 
         get_flavor_by_flavor_id.return_value = fake_flavor
 
-        with mock.patch.object(self.compute_api,
+        with mock.patch.object(compute_utils,
                                'is_volume_backed_instance',
                                return_value=False):
             self.assertRaises(exception.CannotResizeDisk,
@@ -1557,7 +1557,7 @@ class _ComputeAPIUnitTestMixIn(object):
 
         get_flavor_by_flavor_id.return_value = fake_flavor
 
-        @mock.patch.object(self.compute_api, 'is_volume_backed_instance',
+        @mock.patch.object(compute_utils, 'is_volume_backed_instance',
                            return_value=True)
         @mock.patch.object(fake_inst, 'save')
         def do_test(mock_save, mock_volume):
@@ -1939,10 +1939,10 @@ class _ComputeAPIUnitTestMixIn(object):
                                  'backup_instance')
 
         if not is_snapshot:
-            self.mox.StubOutWithMock(self.compute_api,
+            self.mox.StubOutWithMock(compute_utils,
                                      'is_volume_backed_instance')
 
-            self.compute_api.is_volume_backed_instance(self.context,
+            compute_utils.is_volume_backed_instance(self.context,
                 instance).AndReturn(False)
 
         utils.get_image_from_system_metadata(
@@ -2063,7 +2063,7 @@ class _ComputeAPIUnitTestMixIn(object):
     def test_backup_volume_backed_instance(self):
         instance = self._create_instance_obj()
 
-        with mock.patch.object(self.compute_api,
+        with mock.patch.object(compute_utils,
                                'is_volume_backed_instance',
                                return_value=True) as mock_is_volume_backed:
             self.assertRaises(exception.InvalidRequest,
@@ -2810,7 +2810,7 @@ class _ComputeAPIUnitTestMixIn(object):
         with test.nested(
             mock.patch.object(objects.BlockDeviceMappingList,
                               'get_by_instance_uuid', return_value=bdms),
-            mock.patch.object(self.compute_api, 'is_volume_backed_instance',
+            mock.patch.object(compute_utils, 'is_volume_backed_instance',
                               return_value=False),
             mock.patch.object(instance, 'save'),
             mock.patch.object(self.compute_api, '_record_action_start'),

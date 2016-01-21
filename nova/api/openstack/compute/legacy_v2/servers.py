@@ -1093,7 +1093,7 @@ class Controller(wsgi.Controller):
                     context, instance.uuid)
 
         try:
-            if self.compute_api.is_volume_backed_instance(context, instance,
+            if compute.utils.is_volume_backed_instance(context, instance,
                                                           bdms):
                 policy.enforce(context,
                         'compute:snapshot_volume_backed',

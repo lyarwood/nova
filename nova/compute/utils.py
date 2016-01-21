@@ -502,6 +502,22 @@ def remove_shelved_keys_from_system_metadata(instance):
             del (instance.system_metadata[key])
 
 
+def get_instance_root_bdm(context, instance, bdms=None):
+    if bdms is None:
+        bdms = objects.BlockDeviceMappingList.get_by_instance_uuid(
+                context, instance.uuid)
+    return bdms.root_bdm()
+
+
+def is_volume_backed_instance(context, instance, bdms=None):
+    root_bdm = get_instance_root_bdm(context, instance, bdms)
+    if root_bdm is not None:
+        return root_bdm.is_volume
+    # in case we hit a very old instance without root bdm, we _assume_ that
+    # instance is backed by a volume, if and only if image_ref is not set
+    return not instance.image_ref
+
+
 class EventReporter(object):
     """Context manager to report instance action events."""
 
