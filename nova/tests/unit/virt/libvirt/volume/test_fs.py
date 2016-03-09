@@ -56,3 +56,20 @@ class LibvirtBaseFileSystemVolumeDriverTestCase(test.NoDBTestCase):
                                      HASHED_SHARE,
                                      FAKE_DEVICE_NAME)
         self.assertEqual(expected_path, path)
+
+    def test_update_mount_path_usage_connected(self):
+        self.driver.update_mount_path_usage(mock.sentinel.mount_path,
+                                            mock.sentinel.resource)
+        self.assertEqual([mock.sentinel.resource],
+                         fs.mount_path_usage[mock.sentinel.mount_path])
+
+    def test_update_mount_path_usage_disconnected(self):
+        fs.mount_path_usage[mock.sentinel.mount_path] = [
+            mock.sentinel.resource]
+
+        self.driver.update_mount_path_usage(mock.sentinel.mount_path,
+                                            mock.sentinel.resurce,
+                                            connected=False)
+
+        self.assertNotIn([mock.sentinel.mount_path],
+                         fs.mount_path_usage)

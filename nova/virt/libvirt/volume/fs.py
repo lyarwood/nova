@@ -13,12 +13,27 @@
 #    under the License.
 
 import abc
+import collections
 import os
+from oslo_log import log as logging
 
 import six
 
+from nova.i18n import _LW
 from nova import utils
 from nova.virt.libvirt.volume import volume as libvirt_volume
+
+LOG = logging.getLogger(__name__)
+
+def mount_path_synchronized(f):
+    def wrapper(inst, connection_info, *args, **kwargs):
+        mount_path = inst._get_mount_path(connection_info)
+
+        @utils.synchronized(mount_path)
+        def inner():
+            return f(inst, connection_info, *args, **kwargs)
+        return inner()
+    return wrapper
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -93,3 +108,27 @@ class LibvirtBaseFileSystemVolumeDriver(
         """
         mount_path = self._get_mount_path(connection_info)
         return os.path.join(mount_path, connection_info['data']['name'])
+
+    def add_mount_path_usage(self, mount_path, disk_path):
+
+    def remove_mount_path_usage(self, mount_path, disk_path):
+        if vol_name in mount_path_usage[mount_path]:
+            mount_path_usage[mount_path].remove(vol_name)
+        else:
+            LOG.warn(_LW('Volume name %(vol_name)s not found in '
+                         'mount_path_usage: %(mnt_path_usage)s'),
+                     {'vol_name': vol_name,
+                      'mnt_path_usage': mount_path_usage})
+
+    def update_mount_path_usage(self, mount_path, disk_path, inst, connected=True):
+        """Updates mount_path_usage, it will only be called when holding the
+        mount_path lock.
+        """
+        if connected:
+            self.add_mount_path_usage(mount_path, disk_path)
+        else:
+            self.remove_mount_path_usage(mount_path, disk_path)
+
+
+    def is_mount_path_in_use(self, mount_path):
+        return mount_path in mount_path_usage

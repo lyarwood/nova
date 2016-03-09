@@ -56,12 +56,22 @@ class LibvirtGlusterfsVolumeDriver(fs.LibvirtBaseFileSystemVolumeDriver):
 
         return conf
 
+    @fs.mount_path_synchronized
     def connect_volume(self, connection_info, mount_device):
         if 'gluster' not in CONF.libvirt.qemu_allowed_storage_drivers:
-            self._ensure_mounted(connection_info)
+            vol_name = connection_info['data']['name']
+            export = connection_info['data']['export']
+            options = connection_info['data'].get('options')
+            mount_path = self._get_mount_path(connection_info)
+
+            self.update_mount_path_usage(mount_path, vol_name)
+
+            self._ensure_mounted(export, mount_path, options)
+
             connection_info['data']['device_path'] = \
                 self._get_device_path(connection_info)
 
+    @fs.mount_path_synchronized
     def disconnect_volume(self, connection_info, disk_dev):
         """Disconnect the volume."""
 
@@ -69,24 +79,21 @@ class LibvirtGlusterfsVolumeDriver(fs.LibvirtBaseFileSystemVolumeDriver):
             return
 
         mount_path = self._get_mount_path(connection_info)
+        vol_name = connection_info['data']['name']
+        export = connection_info['data']['export']
 
-        try:
-            utils.execute('umount', mount_path, run_as_root=True)
-        except processutils.ProcessExecutionError as exc:
-            export = connection_info['data']['export']
-            if 'target is busy' in six.text_type(exc):
-                LOG.debug("The GlusterFS share %s is still in use.", export)
-            else:
-                LOG.exception(_LE("Couldn't unmount the GlusterFS share %s"),
-                              export)
+        self.update_mount_path_usage(mount_path, vol_name,
+            connected=False)
 
-    def _ensure_mounted(self, connection_info):
-        """@type connection_info: dict
-        """
-        glusterfs_export = connection_info['data']['export']
-        mount_path = self._get_mount_path(connection_info)
+        if not self.is_mount_path_in_use(mount_path):
+            try:
+                utils.execute('umount', mount_path, run_as_root=True)
+            except processutils.ProcessExecutionError:
+                LOG.exception(_LE("Couldn't unmount the "
+                                  "GlusterFS share %s"), export)
+
+    def _ensure_mounted(self, glusterfs_export, mount_path, options):
         if not libvirt_utils.is_mounted(mount_path, glusterfs_export):
-            options = connection_info['data'].get('options')
             self._mount_glusterfs(mount_path, glusterfs_export,
                                   options, ensure=True)
         return mount_path

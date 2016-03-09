@@ -37,7 +37,10 @@ class LibvirtGlusterfsVolumeDriverTestCase(
         connection_info = {'data': {'export': export_string,
                                     'name': self.name}}
         libvirt_driver.connect_volume(connection_info, self.disk_info)
+        self.assertTrue(libvirt_driver.is_mount_path_in_use(export_mnt_base))
+
         libvirt_driver.disconnect_volume(connection_info, "vde")
+        self.assertFalse(libvirt_driver.is_mount_path_in_use(export_mnt_base))
 
         device_path = os.path.join(export_mnt_base,
                                    connection_info['data']['name'])
@@ -99,18 +102,17 @@ class LibvirtGlusterfsVolumeDriverTestCase(
         self.assertEqual(expected_commands, self.executes)
 
     @mock.patch.object(glusterfs.utils, 'execute')
-    @mock.patch.object(glusterfs.LOG, 'debug')
     @mock.patch.object(glusterfs.LOG, 'exception')
     def test_libvirt_glusterfs_driver_umount_error(self, mock_LOG_exception,
-                                        mock_LOG_debug, mock_utils_exe):
+                                                   mock_utils_exe):
         export_string = '192.168.1.1:/volume-00001'
         connection_info = {'data': {'export': export_string,
                                     'name': self.name}}
         libvirt_driver = glusterfs.LibvirtGlusterfsVolumeDriver(self.fake_conn)
         mock_utils_exe.side_effect = processutils.ProcessExecutionError(
-            None, None, None, 'umount', 'umount: target is busy.')
+            None, None, None, 'umount', 'umount: other error.')
         libvirt_driver.disconnect_volume(connection_info, "vde")
-        self.assertTrue(mock_LOG_debug.called)
+        self.assertTrue(mock_LOG_exception.called)
 
     @mock.patch.object(libvirt_utils, 'is_mounted', return_value=False)
     def test_libvirt_glusterfs_driver_with_opts(self, mock_is_mounted):
@@ -168,3 +170,24 @@ class LibvirtGlusterfsVolumeDriverTestCase(
         self.assertFalse(mock_is_mounted.called)
 
         libvirt_driver.disconnect_volume(connection_info, "vde")
+
+    @mock.patch.object(libvirt_utils, 'is_mounted')
+    @mock.patch.object(glusterfs.LibvirtGlusterfsVolumeDriver,
+                       'is_mount_path_in_use')
+    def test_libvirt_glusterfs_driver_disconnect_share_in_use(self,
+                                                              mock_in_use,
+                                                              mock_is_mounted):
+        mock_is_mounted.return_value = True
+        mock_in_use.return_value = True
+
+        libvirt_driver = glusterfs.LibvirtGlusterfsVolumeDriver(self.fake_conn)
+        connection_info = {
+            'data': {
+                'export': '192.168.1.1:/volume-00001',
+                'name': self.name
+            }
+        }
+
+        libvirt_driver.disconnect_volume(connection_info, "vde")
+
+        self.assertEqual([], self.executes)

@@ -624,7 +624,10 @@ class Domain(object):
     def detachDevice(self, xml):
         disk_info = _parse_disk_info(etree.fromstring(xml))
         disk_info['_attached'] = True
-        return disk_info in self._def['devices']['disks']
+        if disk_info in self._def['devices']['disks']:
+            self._def['devices']['disks'].remove(disk_info)
+            return True
+        return False
 
     def detachDeviceFlags(self, xml, flags):
         self.detachDevice(xml)

@@ -43,38 +43,46 @@ class LibvirtNFSVolumeDriver(fs.LibvirtBaseFileSystemVolumeDriver):
         conf.driver_io = "native"
         return conf
 
+    @fs.mount_path_synchronized
     def connect_volume(self, connection_info, disk_info):
         """Connect the volume."""
-        self._ensure_mounted(connection_info)
+        vol_name = connection_info['data']['name']
+        export = connection_info['data']['export']
+        options = connection_info['data'].get('options')
+        mount_path = self._get_mount_path(connection_info)
+
+        self.update_mount_path_usage(mount_path, vol_name)
+
+        self._ensure_mounted(export, mount_path, options)
 
         connection_info['data']['device_path'] = \
             self._get_device_path(connection_info)
 
-    def disconnect_volume(self, connection_info, disk_dev):
-        """Disconnect the volume."""
-
-        mount_path = self._get_mount_path(connection_info)
-
+    def _unmount_nfs(self, mount_path, export):
         try:
             utils.execute('umount', mount_path, run_as_root=True)
         except processutils.ProcessExecutionError as exc:
-            export = connection_info['data']['export']
-            if ('device is busy' in six.text_type(exc) or
-                'target is busy' in six.text_type(exc)):
-                LOG.debug("The NFS share %s is still in use.", export)
-            elif ('not mounted' in six.text_type(exc)):
+            if ('not mounted' in six.text_type(exc)):
                 LOG.debug("The NFS share %s has already been unmounted.",
                           export)
             else:
-                LOG.exception(_LE("Couldn't unmount the NFS share %s"), export)
+                LOG.exception(_LE("Couldn't unmount the NFS share %s"),
+                                  export)
 
-    def _ensure_mounted(self, connection_info):
-        """@type connection_info: dict
-        """
-        nfs_export = connection_info['data']['export']
+    @fs.mount_path_synchronized
+    def disconnect_volume(self, connection_info, disk_dev):
+        """Disconnect the volume."""
+        vol_name = connection_info['data']['name']
+        export = connection_info['data']['export']
         mount_path = self._get_mount_path(connection_info)
+
+        self.update_mount_path_usage(mount_path, vol_name, connected=False)
+
+        if not self.is_mount_path_in_use(mount_path):
+            self._unmount_nfs(mount_path, export)
+
+    def _ensure_mounted(self, nfs_export, mount_path, options):
         if not libvirt_utils.is_mounted(mount_path, nfs_export):
-            options = connection_info['data'].get('options')
             self._mount_nfs(mount_path, nfs_export, options, ensure=True)
         return mount_path
 

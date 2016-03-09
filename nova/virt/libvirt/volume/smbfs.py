@@ -39,10 +39,14 @@ class LibvirtSMBFSVolumeDriver(fs.LibvirtBaseFileSystemVolumeDriver):
         conf.driver_format = connection_info['data'].get('format', 'raw')
         return conf
 
+    @fs.mount_path_synchronized
     def connect_volume(self, connection_info, disk_info):
         """Connect the volume."""
         smbfs_share = connection_info['data']['export']
+        vol_name = connection_info['data']['name']
         mount_path = self._get_mount_path(connection_info)
+
+        self.update_mount_path_usage(mount_path, vol_name)
 
         if not libvirt_utils.is_mounted(mount_path, smbfs_share):
             mount_options = self._parse_mount_options(connection_info)
@@ -52,11 +56,18 @@ class LibvirtSMBFSVolumeDriver(fs.LibvirtBaseFileSystemVolumeDriver):
         device_path = self._get_device_path(connection_info)
         connection_info['data']['device_path'] = device_path
 
+    @fs.mount_path_synchronized
     def disconnect_volume(self, connection_info, disk_dev):
         """Disconnect the volume."""
         smbfs_share = connection_info['data']['export']
+        vol_name = connection_info['data']['name']
         mount_path = self._get_mount_path(connection_info)
-        remotefs.unmount_share(mount_path, smbfs_share)
+
+        self.update_mount_path_usage(mount_path, vol_name,
+                                     connected=False)
+
+        if not self.is_mount_path_in_use(mount_path):
+            remotefs.unmount_share(mount_path, smbfs_share)
 
     def _parse_mount_options(self, connection_info):
         mount_options = " ".join(

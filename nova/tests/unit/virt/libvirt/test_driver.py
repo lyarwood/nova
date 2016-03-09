@@ -104,6 +104,7 @@ from nova.virt.libvirt.storage import dmcrypt
 from nova.virt.libvirt.storage import lvm
 from nova.virt.libvirt.storage import rbd_utils
 from nova.virt.libvirt import utils as libvirt_utils
+from nova.virt.libvirt.volume import fs as volume_fs
 from nova.virt.libvirt.volume import volume as volume_drivers
 
 libvirt_driver.libvirt = fakelibvirt
@@ -5807,6 +5808,55 @@ class LibvirtConnTestCase(test.NoDBTestCase):
         self.assertEqual(uuids[3], vm4.UUIDString())
         mock_list.assert_called_with(only_guests=True, only_running=False)
 
+    @mock.patch.object(host.Host, "list_instance_domains")
+    def test_get_devices_by_source_type(self, mock_list):
+        xml = [
+            """
+                <domain type='kvm'>
+                    <devices>
+                        <disk type='file'>
+                            <source file='filename1'/>
+                        </disk>
+                        <disk type='block'>
+                            <source dev='/path/to/dev/1'/>
+                        </disk>
+                    </devices>
+                </domain>
+            """,
+            """
+                <domain type='kvm'>
+                    <devices>
+                        <disk type='file'>
+                            <source file='filename2'/>
+                        </disk>
+                    </devices>
+                </domain>
+            """,
+            """
+                <domain type='kvm'>
+                    <devices>
+                        <disk type='file'>
+                            <source file='filename3'/>
+                        </disk>
+                        <disk type='block'>
+                            <source dev='/path/to/dev/3'/>
+                        </disk>
+                    </devices>
+                </domain>
+            """,
+        ]
+
+        mock_list.return_value = [
+            FakeVirtDomain(xml[0], id=3, name="instance00000001"),
+            FakeVirtDomain(xml[1], id=1, name="instance00000002"),
+            FakeVirtDomain(xml[2], id=5, name="instance00000003")]
+
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+
+        devices = drvr._get_all_file_paths()
+        self.assertEqual(['filename1', 'filename2', 'filename3'], devices)
+        mock_list.assert_called_with(only_guests=True, only_running=True)
+
     @mock.patch('nova.virt.libvirt.host.Host.get_online_cpus')
     def test_get_host_vcpus(self, get_online_cpus):
         drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
@@ -10528,6 +10578,8 @@ class LibvirtConnTestCase(test.NoDBTestCase):
             mock.patch.object(host.Host, "has_min_version",
                               return_value=True),
             mock.patch.object(drvr, "_do_quality_warnings",
+                              return_value=None),
+            mock.patch.object(drvr, "_init_mount_path_usage",
                               return_value=None),
             mock.patch.object(objects.Service, "get_by_compute_host",
                               return_value=service_mock),
@@ -16467,6 +16519,31 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
                                return_value=mock_guest):
             self.assertRaises(fakelibvirt.libvirtError,
                               self.drvr.trigger_crash_dump, instance)
+
+    def test_get_all_guest_file_disk_paths(self):
+        pass
+
+    def test_get_mount_path(self):
+        pass
+
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver.'
+                '_get_all_file_devices')
+    def test_init_mount_path_usage(self, mock_get_devices):
+        drv = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        mock_get_devices.return_value = [
+            '/mnt/7238ca227f24b2984e2f10233a9c78a3/volume1',
+            '/mnt/7393bd3fad43865503de14402bb43dd2/volume2']
+        expected_keys = ['/mnt/7238ca227f24b2984e2f10233a9c78a3',
+                         '/mnt/7393bd3fad43865503de14402bb43dd2']
+        expected_values = [['volume1'], ['volume2']]
+
+        drv._init_mount_path_usage()
+
+        self.assertItemsEqual(expected_keys,
+                              volume_fs.mount_path_usage.keys())
+
+        self.assertItemsEqual(expected_values,
+                              volume_fs.mount_path_usage.values())
 
 
 class LibvirtVolumeUsageTestCase(test.NoDBTestCase):

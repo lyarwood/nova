@@ -40,7 +40,12 @@ class LibvirtSMBFSVolumeDriverTestCase(test_volume.LibvirtVolumeBaseTestCase):
                                     'name': self.name,
                                     'options': None}}
         libvirt_driver.connect_volume(connection_info, self.disk_info)
+        self.assertTrue(libvirt_driver.is_mount_path_in_use(
+            export_mnt_base))
+
         libvirt_driver.disconnect_volume(connection_info, "vde")
+        self.assertFalse(libvirt_driver.is_mount_path_in_use(
+            export_mnt_base))
 
         expected_commands = [
             ('mkdir', '-p', export_mnt_base),
@@ -48,6 +53,26 @@ class LibvirtSMBFSVolumeDriverTestCase(test_volume.LibvirtVolumeBaseTestCase):
              export_string, export_mnt_base),
             ('umount', export_mnt_base)]
         self.assertEqual(expected_commands, self.executes)
+
+    @mock.patch.object(libvirt_utils, 'is_mounted')
+    @mock.patch.object(smbfs.LibvirtSMBFSVolumeDriver,
+        'is_mount_path_in_use')
+    def test_libvirt_smbfs_driver_disconnect_share_in_use(self, mock_in_use,
+                                                          mock_is_mounted):
+        mock_is_mounted.return_value = True
+        mock_in_use.return_value = True
+
+        libvirt_driver = smbfs.LibvirtSMBFSVolumeDriver(self.fake_conn)
+        connection_info = {
+            'data': {
+                'export': '//192.168.1.1/volumes',
+                'name': self.name
+            }
+        }
+
+        libvirt_driver.disconnect_volume(connection_info, "vde")
+
+        self.assertEqual([], self.executes)
 
     def test_libvirt_smbfs_driver_already_mounted(self):
         libvirt_driver = smbfs.LibvirtSMBFSVolumeDriver(self.fake_conn)

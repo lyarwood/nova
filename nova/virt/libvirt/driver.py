@@ -108,6 +108,7 @@ from nova.virt.libvirt.storage import lvm
 from nova.virt.libvirt.storage import rbd_utils
 from nova.virt.libvirt import utils as libvirt_utils
 from nova.virt.libvirt import vif as libvirt_vif
+from nova.virt.libvirt.volume import fs
 from nova.virt.libvirt.volume import remotefs
 from nova.virt import netutils
 from nova.virt import watchdog_actions
@@ -455,6 +456,36 @@ class LibvirtDriver(driver.ComputeDriver):
     def _version_to_string(self, version):
         return '.'.join([str(x) for x in version])
 
+    def _get_all_guest_file_disk_paths(self):
+        """ Return a dict of guests containing a list of file disk devices """
+        guests = {}
+        for guest in self._host.list_guests():
+            guests[guest.uuid] = []
+            for disk in guest.get_all_disks():
+                if disk.source_type == "file":
+                    guests[guest.uuid].append(disk.source_path)
+        return guests
+
+    def _get_mount_path(self, source_path):
+        """Find the mount path for a given source file"""\
+        path = source_path
+        while dirpath != "/":
+            dir_path, dir_names, filenames = os.path.walk(path, topdown=True)
+            if os.path.ismount(dir_path):
+                return dir_path
+            path = dir_path
+        return None
+
+    def _init_mount_path_usage(self):
+        """Initialize MountManager with volumes already mounted"""
+        self.mount_manager = MountManager()
+        guest_disk_paths = self._get_all_guest_file_disk_paths()
+        for guest, disk_paths in guest_disk_paths:
+            for disk_path in disk_paths:
+                mount_path = self._get_mount_path(disk_path)
+                if mount_path:
+                    self.mount_manager.add(guest, mount_path)
+
     def init_host(self, host):
         self._host.initialize()
 
@@ -529,6 +560,8 @@ class LibvirtDriver(driver.ComputeDriver):
                         MIN_LIBVIRT_OTHER_ARCH.get(kvm_arch)),
                      'qemu_ver': self._version_to_string(
                         MIN_QEMU_OTHER_ARCH.get(kvm_arch))})
+
+        self._init_mount_path_usage()
 
     def _check_required_migration_flags(self, migration_flags, config_name):
         if CONF.libvirt.virt_type == 'xen':
