@@ -366,9 +366,6 @@ class _ComputeAPIUnitTestMixIn(object):
         volume = fake_volume.fake_volume(1, 'test-vol', 'test-vol',
                                          None, None, None, None, None)
 
-        fake_bdm = mock.MagicMock(spec=objects.BlockDeviceMapping)
-        mock_reserve.return_value = fake_bdm
-
         mock_volume_api = mock.patch.object(self.compute_api, 'volume_api',
                                             mock.MagicMock(spec=cinder.API))
 
@@ -383,8 +380,34 @@ class _ComputeAPIUnitTestMixIn(object):
                                                             instance=instance)
             mock_v_api.reserve_volume.assert_called_once_with(self.context,
                                                               volume['id'])
+            self.assertEqual(0, mock_reserve.call_count)
             self.assertEqual(0, mock_attach.call_count)
-            fake_bdm.destroy.assert_called_once_with()
+
+    @mock.patch.object(compute_rpcapi.ComputeAPI, 'reserve_block_device_name')
+    @mock.patch.object(compute_rpcapi.ComputeAPI, 'attach_volume')
+    def test_attach_volume_reserve_device_fails(self,
+                                                mock_attach, mock_reserve):
+        instance = self._create_instance_obj()
+        volume = fake_volume.fake_volume(1, 'test-vol', 'test-vol',
+                                         None, None, None, None, None)
+        mock_reserve.side_effect = test.TestingException()
+
+        mock_volume_api = mock.patch.object(self.compute_api, 'volume_api',
+                                            mock.MagicMock(spec=cinder.API))
+
+        with mock_volume_api as mock_v_api:
+            mock_v_api.get.return_value = volume
+            self.assertRaises(test.TestingException,
+                              self.compute_api.attach_volume,
+                              self.context, instance, volume['id'])
+            mock_v_api.check_attach.assert_called_once_with(self.context,
+                                                            volume,
+                                                            instance=instance)
+            mock_v_api.reserve_volume.assert_called_once_with(self.context,
+                                                              volume['id'])
+            mock_v_api.unreserve_volume.assert_called_once_with(self.context,
+                                                                volume['id'])
+            self.assertEqual(0, mock_attach.call_count)
 
     def test_suspend(self):
         # Ensure instance can be suspended.
@@ -3799,6 +3822,9 @@ class ComputeAPIAPICellUnitTestCase(_ComputeAPIUnitTestMixIn,
 
     def test_attach_volume_reserve_fails(self):
         self.skipTest("Reserve is never done in the API cell.")
+
+    def test_attach_volume_reserve_device_fails(self):
+        self.skipTest("Reserve device is never done in the API cell.")
 
 
 class ComputeAPIComputeCellUnitTestCase(_ComputeAPIUnitTestMixIn,

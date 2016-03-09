@@ -20,6 +20,7 @@
 networking and storage of VMs, and compute hosts on which they run)."""
 
 import base64
+import contextlib
 import copy
 import functools
 import re
@@ -3096,10 +3097,18 @@ class API(base.Base):
                 device_type=device_type)
         return volume_bdm
 
+    @contextlib.contextmanager
     def _check_attach_and_reserve_volume(self, context, volume_id, instance):
         volume = self.volume_api.get(context, volume_id)
         self.volume_api.check_attach(context, volume, instance=instance)
         self.volume_api.reserve_volume(context, volume_id)
+        try:
+            yield
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.info(_LI("Unreserving a reserved volume %(vol)s, due to "
+                             "an exception."), {'vol': volume_id})
+                self.volume_api.unreserve_volume(context, volume_id)
 
     def _attach_volume(self, context, instance, volume_id, device,
                        disk_bus, device_type):
@@ -3108,15 +3117,30 @@ class API(base.Base):
         This method is separated to make it possible for cells version
         to override it.
         """
-        volume_bdm = self._create_volume_bdm(
-            context, instance, device, volume_id, disk_bus=disk_bus,
-            device_type=device_type)
+        volume_bdm = None
         try:
-            self._check_attach_and_reserve_volume(context, volume_id, instance)
+            with self._check_attach_and_reserve_volume(context, volume_id, 
+                                                       instance):
+                volume_bdm = self._create_volume_bdm(context, instance, 
+                                                     device, volume_id, 
+                                                     disk_bus=disk_bus,
+                                                     device_type=device_type)
+
             self.compute_rpcapi.attach_volume(context, instance, volume_bdm)
+
         except Exception:
             with excutils.save_and_reraise_exception():
-                volume_bdm.destroy()
+                # NOTE(lyarwood): If attach_volume fails we should have a valid
+                # volume_bdm to destroy. If we fail during _create_volume_bdm
+                # then we need to search for and remove any active BDM for the
+                # instance.uuid and volume_id combination.
+                if volume_bdm:
+                    volume_bdm.destroy()
+                else:
+                    bdms = objects.BlockDeviceMappingList.get_by_instance_uuid(context, instance.uuid)
+                    volume_bdms = [bdm for bdm in bdms if bdm.volume_id == volume_id]
+                    for bdm in volume_bdms:
+                        bdm.destroy()
 
         return volume_bdm.device_name
 
@@ -3133,11 +3157,12 @@ class API(base.Base):
         instance will be unshelved.
         """
 
-        volume_bdm = self._create_volume_bdm(
-            context, instance, device, volume_id, disk_bus=disk_bus,
-            device_type=device_type, is_local_creation=True)
+        with self._check_attach_and_reserve_volume(
+                context, volume_id, instance):
+            volume_bdm = self._create_volume_bdm(
+                context, instance, device, volume_id, disk_bus=disk_bus,
+                device_type=device_type, is_local_creation=True)
         try:
-            self._check_attach_and_reserve_volume(context, volume_id, instance)
             self.volume_api.attach(context,
                                    volume_id,
                                    instance.uuid,
