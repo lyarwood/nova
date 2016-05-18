@@ -1293,8 +1293,10 @@ class LibvirtDriver(driver.ComputeDriver):
                          instance=instance)
             else:
                 raise
-
-        self._disconnect_volume(connection_info, disk_dev)
+        
+        connector = self.get_volume_connector(instance)
+        if connector.get('host') == instance.host:
+            self._disconnect_volume(connection_info, disk_dev)
 
     def attach_interface(self, instance, image_meta, vif):
         guest = self._host.get_guest(instance)
