@@ -1057,17 +1057,18 @@ class LibvirtDriver(driver.ComputeDriver):
             utils.execute('rm', '-rf', target, delay_on_retry=True,
                           attempts=5)
 
-        root_disk = self.image_backend.image(instance, 'disk')
-        # TODO(nic): Set ignore_errors=False in a future release.
-        # It is set to True here to avoid any upgrade issues surrounding
-        # instances being in pending resize state when the software is updated;
-        # in that case there will be no snapshot to remove.  Once it can be
-        # reasonably assumed that no such instances exist in the wild
-        # anymore, it should be set back to False (the default) so it will
-        # throw errors, like it should.
-        if root_disk.exists():
-            root_disk.remove_snap(libvirt_utils.RESIZE_SNAPSHOT_NAME,
-                                  ignore_errors=True)
+        if not compute_utils.is_volume_backed_instance(instance):
+            root_disk = self.image_backend.image(instance, 'disk')
+            # TODO(nic): Set ignore_errors=False in a future release.
+            # It is set to True here to avoid any upgrade issues surrounding
+            # instances being in pending resize state when the software is updated;
+            # in that case there will be no snapshot to remove.  Once it can be
+            # reasonably assumed that no such instances exist in the wild
+            # anymore, it should be set back to False (the default) so it will
+            # throw errors, like it should.
+            if root_disk.exists():
+                root_disk.remove_snap(libvirt_utils.RESIZE_SNAPSHOT_NAME,
+                                      ignore_errors=True)
 
         if instance.host != CONF.host:
             self._undefine_domain(instance)
