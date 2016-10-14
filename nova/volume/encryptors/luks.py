@@ -13,9 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
 
 from oslo_concurrency import processutils
 from oslo_log import log as logging
+from oslo_utils import excutils
 
 from nova.i18n import _LI
 from nova.i18n import _LW
@@ -85,6 +87,34 @@ class LuksEncryptor(cryptsetup.CryptsetupEncryptor):
                       self.dev_path, self.dev_name, process_input=passphrase,
                       run_as_root=True, check_exit_code=True)
 
+    def _unmangle_passphrase(self, key, passphrase, **kwargs):
+        mangled_passphrase = self._get_mangled_passphrase(key)
+        try:
+            self._open_volume(mangled_passphrase, **kwargs)
+        except processutils.ProcessExecutionError as e:
+            with excutils.save_and_reraise_exception():
+                if e.exit_code == 2:
+                    LOG.warning(_LW("Unable to open %s even when using a "
+                                    "mangled passphrase."), self.dev_path)
+        self._close_volume(**kwargs)
+
+        with utils.tempdir() as tmpdir:
+            passphrase_path = os.path.join(tmpdir, 'new')
+            mangled_passphrase_path = os.path.join(tmpdir, 'original')
+            with open(mangled_passphrase_path) as f:
+                f.write(mangled_passphrase)
+            with open(passphrase_path) as f:
+                f.write(passphrase)
+
+            utils.execute('cryptsetup', 'luksAddKey',
+                          '--key-file', mangled_passphrase_path,
+                          self.dev_path, passphrase_path,
+                          run_as_root=True, check_exit_code=True)
+            utils.execute('cryptsetup', 'luksRemoveKey',
+                          '--key-file', mangled_passphrase_path,
+                          self.dev_path, run_as_root=True,
+                          check_exit_code=True)
+
     def attach_volume(self, context, **kwargs):
         """Shadows the device and passes an unencrypted version to the
         instance.
@@ -107,6 +137,15 @@ class LuksEncryptor(cryptsetup.CryptsetupEncryptor):
                              " formatting device for first use"),
                          self.dev_path)
                 self._format_volume(passphrase, **kwargs)
+                self._open_volume(passphrase, **kwargs)
+            elif e.exit_code == 2:
+                # NOTE(lyarwood): Workaround bug# by replacing any mangled
+                # passphrases that are found on the volume.
+                # TODO(lyarwood): Remove workaround during R.
+                LOG.info(_LI("Unable to open %s with the current passphrase,"
+                             "attempting to use a mangled passphrase to open"
+                             "the volume."), self.dev_path)
+                self._unmangle_passphrase(key, passphrase, **kwargs)
                 self._open_volume(passphrase, **kwargs)
             else:
                 raise

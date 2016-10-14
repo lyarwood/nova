@@ -14,6 +14,7 @@
 #    under the License.
 
 
+import array
 import binascii
 import os
 
@@ -94,6 +95,17 @@ class CryptsetupEncryptor(base.VolumeEncryptor):
         """Convert raw key to string."""
         return binascii.hexlify(key).decode('utf-8')
 
+    def _get_mangled_passphrase(self, key):
+        """Convert the raw key into a list of unsigned int's and then a string
+        """
+        # NOTE(lyarwood): This replicates the methods used prior to Newton to
+        # first encode the passphrase as a list of unsigned int's before
+        # decoding back into a string. This method strips any leading 0's
+        # of the resulting hex digit pairs, resulting in a different
+        # passphrase being returned.
+        encoded_key = array.array('B', key).tolist()
+        return ''.join(hex(x).replace('0x', '') for x in encoded_key)
+
     def _open_volume(self, passphrase, **kwargs):
         """Opens the LUKS partition on the volume using the specified
         passphrase.
@@ -132,7 +144,17 @@ class CryptsetupEncryptor(base.VolumeEncryptor):
         key = self._get_key(context).get_encoded()
         passphrase = self._get_passphrase(key)
 
-        self._open_volume(passphrase, **kwargs)
+        try:
+            self._open_volume(passphrase, **kwargs)
+        except processutils.ProcessExecutionError as e:
+            if e.exit_code == 2:
+                LOG.warning(_LW("Permission denied accessing %s, attempting to"
+                                " use a mangled passphrase as outlined in "
+                                "bug#1633518."), self.dev_path)
+                passphrase = self._get_mangled_passphrase(key)
+                self._open_volume(passphrase, **kwargs)
+            else:
+                raise
 
         # modify the original symbolic link to refer to the decrypted device
         utils.execute('ln', '--symbolic', '--force',

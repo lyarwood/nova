@@ -20,15 +20,16 @@ import copy
 from castellan.common.objects import symmetric_key as key
 import mock
 import six
+import uuid
 
 from nova import exception
 from nova.tests.unit.volume.encryptors import test_base
 from nova.volume.encryptors import cryptsetup
+from oslo_concurrency import processutils
 
 
-def fake__get_key(context):
-    raw = bytes(binascii.unhexlify('0' * 32))
-
+def fake__get_key(context, passphrase):
+    raw = bytes(binascii.unhexlify(passphrase))
     symmetric_key = key.SymmetricKey('AES', len(raw) * 8, raw)
     return symmetric_key
 
@@ -59,14 +60,15 @@ class CryptsetupEncryptorTestCase(test_base.VolumeEncryptorTestCase):
 
     @mock.patch('nova.utils.execute')
     def test_attach_volume(self, mock_execute):
+        fake_key = uuid.uuid4().hex
         self.encryptor._get_key = mock.MagicMock()
-        self.encryptor._get_key.return_value = fake__get_key(None)
+        self.encryptor._get_key.return_value = fake__get_key(None, fake_key)
 
         self.encryptor.attach_volume(None)
 
         mock_execute.assert_has_calls([
             mock.call('cryptsetup', 'create', '--key-file=-', self.dev_name,
-                      self.dev_path, process_input='0' * 32,
+                      self.dev_path, process_input=fake_key,
                       run_as_root=True, check_exit_code=True),
             mock.call('ln', '--symbolic', '--force',
                       '/dev/mapper/%s' % self.dev_name, self.symlink_path,
@@ -138,3 +140,41 @@ class CryptsetupEncryptorTestCase(test_base.VolumeEncryptorTestCase):
             mock.call('/dev/mapper/%s' % wwn)])
         mock_execute.assert_called_once_with(
             'cryptsetup', 'status', wwn, run_as_root=True)
+
+    def test__get_mangled_passphrase(self):
+        # Confirm that a mangled passphrase is provided as per bug#1633518
+        unmangled_raw_key = bytes(binascii.unhexlify('0725230b'))
+        symmetric_key = key.SymmetricKey('AES', len(unmangled_raw_key) * 8,
+                                         unmangled_raw_key)
+        unmangled_encoded_key = symmetric_key.get_encoded()
+        encryptor = cryptsetup.CryptsetupEncryptor(self.connection_info)
+        self.assertEqual(encryptor._get_mangled_passphrase(
+                                        unmangled_encoded_key), '72523b')
+
+    @mock.patch('nova.utils.execute')
+    def test_attach_volume_permission_denied(self, mock_execute):
+        fake_key = "0725230b"
+        fake_key_mangled = "72523b"
+        self.encryptor._get_key = mock.MagicMock()
+        self.encryptor._get_key.return_value = fake__get_key(None, fake_key)
+
+        mock_execute.side_effect = [
+            processutils.ProcessExecutionError(exit_code=2),  # luksOpen
+            mock.DEFAULT,  # luksOpen
+            mock.DEFAULT,  # ln
+        ]
+
+        self.encryptor.attach_volume(None)
+
+        mock_execute.assert_has_calls([
+            mock.call('cryptsetup', 'create', '--key-file=-', self.dev_name,
+                      self.dev_path, process_input=fake_key,
+                      run_as_root=True, check_exit_code=True),
+            mock.call('cryptsetup', 'create', '--key-file=-', self.dev_name,
+                      self.dev_path, process_input=fake_key_mangled,
+                      run_as_root=True, check_exit_code=True),
+            mock.call('ln', '--symbolic', '--force',
+                      '/dev/mapper/%s' % self.dev_name, self.symlink_path,
+                      run_as_root=True, check_exit_code=True),
+        ])
+        self.assertEqual(3, mock_execute.call_count)

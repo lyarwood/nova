@@ -16,6 +16,7 @@
 
 import mock
 from oslo_concurrency import processutils
+import uuid
 
 from nova.tests.unit.volume.encryptors import test_cryptsetup
 from nova.volume.encryptors import luks
@@ -78,15 +79,16 @@ class LuksEncryptorTestCase(test_cryptsetup.CryptsetupEncryptorTestCase):
 
     @mock.patch('nova.utils.execute')
     def test_attach_volume(self, mock_execute):
+        fake_key = uuid.uuid4().hex
         self.encryptor._get_key = mock.MagicMock()
-        self.encryptor._get_key.return_value = \
-                test_cryptsetup.fake__get_key(None)
+        self.encryptor._get_key.return_value = test_cryptsetup.fake__get_key(
+                                                                None, fake_key)
 
         self.encryptor.attach_volume(None)
 
         mock_execute.assert_has_calls([
             mock.call('cryptsetup', 'luksOpen', '--key-file=-', self.dev_path,
-                      self.dev_name, process_input='0' * 32,
+                      self.dev_name, process_input=fake_key,
                       run_as_root=True, check_exit_code=True),
             mock.call('ln', '--symbolic', '--force',
                       '/dev/mapper/%s' % self.dev_name, self.symlink_path,
@@ -96,9 +98,10 @@ class LuksEncryptorTestCase(test_cryptsetup.CryptsetupEncryptorTestCase):
 
     @mock.patch('nova.utils.execute')
     def test_attach_volume_not_formatted(self, mock_execute):
+        fake_key = uuid.uuid4().hex
         self.encryptor._get_key = mock.MagicMock()
-        self.encryptor._get_key.return_value = \
-                test_cryptsetup.fake__get_key(None)
+        self.encryptor._get_key.return_value = test_cryptsetup.fake__get_key(
+                                                                None, fake_key)
 
         mock_execute.side_effect = [
                 processutils.ProcessExecutionError(exit_code=1),  # luksOpen
@@ -112,15 +115,15 @@ class LuksEncryptorTestCase(test_cryptsetup.CryptsetupEncryptorTestCase):
 
         mock_execute.assert_has_calls([
             mock.call('cryptsetup', 'luksOpen', '--key-file=-', self.dev_path,
-                      self.dev_name, process_input='0' * 32,
+                      self.dev_name, process_input=fake_key,
                       run_as_root=True, check_exit_code=True),
             mock.call('cryptsetup', 'isLuks', '--verbose', self.dev_path,
                       run_as_root=True, check_exit_code=True),
             mock.call('cryptsetup', '--batch-mode', 'luksFormat',
-                      '--key-file=-', self.dev_path, process_input='0' * 32,
+                      '--key-file=-', self.dev_path, process_input=fake_key,
                       run_as_root=True, check_exit_code=True, attempts=3),
             mock.call('cryptsetup', 'luksOpen', '--key-file=-', self.dev_path,
-                      self.dev_name, process_input='0' * 32,
+                      self.dev_name, process_input=fake_key,
                       run_as_root=True, check_exit_code=True),
             mock.call('ln', '--symbolic', '--force',
                       '/dev/mapper/%s' % self.dev_name, self.symlink_path,
@@ -130,9 +133,10 @@ class LuksEncryptorTestCase(test_cryptsetup.CryptsetupEncryptorTestCase):
 
     @mock.patch('nova.utils.execute')
     def test_attach_volume_fail(self, mock_execute):
+        fake_key = uuid.uuid4().hex
         self.encryptor._get_key = mock.MagicMock()
-        self.encryptor._get_key.return_value = \
-                test_cryptsetup.fake__get_key(None)
+        self.encryptor._get_key.return_value = test_cryptsetup.fake__get_key(
+                                                                None, fake_key)
 
         mock_execute.side_effect = [
                 processutils.ProcessExecutionError(exit_code=1),  # luksOpen
@@ -144,7 +148,7 @@ class LuksEncryptorTestCase(test_cryptsetup.CryptsetupEncryptorTestCase):
 
         mock_execute.assert_has_calls([
             mock.call('cryptsetup', 'luksOpen', '--key-file=-', self.dev_path,
-                      self.dev_name, process_input='0' * 32,
+                      self.dev_name, process_input=fake_key,
                       run_as_root=True, check_exit_code=True),
             mock.call('cryptsetup', 'isLuks', '--verbose', self.dev_path,
                       run_as_root=True, check_exit_code=True),
@@ -170,3 +174,40 @@ class LuksEncryptorTestCase(test_cryptsetup.CryptsetupEncryptorTestCase):
                       attempts=3, run_as_root=True, check_exit_code=True),
         ])
         self.assertEqual(1, mock_execute.call_count)
+
+    @mock.patch('open')
+    @mock.patch('nova.utils.tmpdir')
+    @mock.patch('nova.utils.execute')
+    def test_attach_volume_unmangle_passphrase(self, mock_open, mock_tmpdir, mock_execute):
+        fake_key = "0725230b"
+        fake_key_mangled = "72523b"
+        self.encryptor._get_key = mock.MagicMock()
+        self.encryptor._get_key.return_value = \
+            test_cryptsetup.fake__get_key(None, fake_key)
+
+        mock_execute.side_effect = [
+                processutils.ProcessExecutionError(exit_code=2),  # luksOpen
+                mock.DEFAULT,  # luksOpen
+                mock.DEFAULT,  # luksClose
+                mock.DEFAULT,  # luksAddKey
+                mock.DEFAULT,  # luksRemoveKey
+                mock.DEFUALT,  # luksOpen
+                mock.DEFAULT,  # ln
+        ]
+
+        self.encryptor.attach_volume(None)
+
+        mock_execute.assert_has_calls([
+            mock.call('cryptsetup', 'luksOpen', '--key-file=-', self.dev_path,
+                      self.dev_name, process_input=fake_key,
+                      run_as_root=True, check_exit_code=True),
+            mock.call('cryptsetup', 'luksOpen', '--key-file=-', self.dev_path,
+                      self.dev_name, process_input=fake_key_mangled,
+                      run_as_root=True, check_exit_code=True),
+            mock.call('cryptsetup', 'luksOpen', '--key-file=-', self.dev_path,
+                      self.dev_name, process_input=fake_key,
+                      run_as_root=True, check_exit_code=True),
+            mock.call('ln', '--symbolic', '--force',
+                      '/dev/mapper/%s' % self.dev_name, self.symlink_path,
+                      run_as_root=True, check_exit_code=True),
+        ], any_order=False)
