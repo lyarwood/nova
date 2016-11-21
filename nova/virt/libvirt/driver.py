@@ -2349,12 +2349,11 @@ class LibvirtDriver(driver.ComputeDriver):
         re-creates the domain to ensure the reboot happens, as the guest
         OS cannot ignore this action.
         """
-
-        self._destroy(instance)
         # Domain XML will be redefined so we can safely undefine it
         # from libvirt. This ensure that such process as create serial
         # console for guest will run smoothly.
-        self._undefine_domain(instance)
+        self.destroy(context, instance, network_info, destroy_disks=False,
+                     block_device_info=block_device_info, migrate_data=None)
 
         # Convert the system metadata to image metadata
         # NOTE(mdbooth): This is a workaround for stateless Nova compute
@@ -2391,7 +2390,6 @@ class LibvirtDriver(driver.ComputeDriver):
         self._create_domain_and_network(context, xml, instance, network_info,
                                         disk_info,
                                         block_device_info=block_device_info,
-                                        reboot=True,
                                         vifs_already_plugged=True)
         self._prepare_pci_devices_for_use(
             pci_manager.get_instance_pci_devs(instance, 'all'))
