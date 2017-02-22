@@ -2501,7 +2501,7 @@ class ComputeManager(manager.Manager):
     def _power_on(self, context, instance):
         network_info = self.network_api.get_instance_nw_info(context, instance)
         block_device_info = self._get_instance_block_device_info(context,
-                                                                 instance)
+                                instance, refresh_conn_info=True)
         self.driver.power_on(context, instance,
                              network_info,
                              block_device_info)
