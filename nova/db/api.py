@@ -1329,6 +1329,14 @@ def block_device_mapping_get_by_uuid(context, uuid,
                                                  columns_to_join)
 
 
+def block_device_mapping_get_by_attachment_id(context, attachment_id,
+                                              columns_to_join=None):
+    """Get block device mapping by attachment id"""
+    return IMPL.block_device_mapping_get_by_attachment_id(context,
+                                                          attachment_id,
+                                                          columns_to_join)
+
+
 def block_device_mapping_destroy(context, bdm_id):
     """Destroy the block device mapping."""
     return IMPL.block_device_mapping_destroy(context, bdm_id)

@@ -4313,6 +4313,16 @@ def block_device_mapping_get_by_uuid(context, uuid,
 
 
 @require_context
+@pick_context_manager_reader
+def block_device_mapping_get_by_attachment_id(context, attachment_id,
+                                              columns_to_join=None):
+    return _block_device_mapping_get_query(context,
+            columns_to_join=columns_to_join).\
+                filter_by(attachment_id=attachment_id).\
+                first()
+
+
+@require_context
 @pick_context_manager_writer
 def block_device_mapping_destroy(context, bdm_id):
     _block_device_mapping_get_query(context).\

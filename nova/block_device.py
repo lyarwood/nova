@@ -45,7 +45,7 @@ bdm_new_fields = set(['source_type', 'destination_type',
                      'guest_format', 'device_type', 'disk_bus', 'boot_index',
                      'device_name', 'delete_on_termination', 'snapshot_id',
                      'volume_id', 'volume_size', 'image_id', 'no_device',
-                     'connection_info', 'tag'])
+                     'connection_info', 'tag', 'attachment_id'])
 
 
 bdm_db_only_fields = set(['id', 'instance_uuid', 'uuid'])
@@ -56,7 +56,8 @@ bdm_db_inherited_fields = set(['created_at', 'updated_at',
 
 
 bdm_new_non_api_fields = set(['volume_id', 'snapshot_id',
-                              'image_id', 'connection_info'])
+                              'image_id', 'connection_info',
+                              'attachment_id'])
 
 
 bdm_new_api_only_fields = set(['uuid'])

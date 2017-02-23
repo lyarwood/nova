@@ -6608,6 +6608,12 @@ class BlockDeviceMappingTestCase(test.TestCase):
         self.assertEqual('/dev/vdb', bdms[0]['device_name'])
         self.assertEqual(bdm2['uuid'], bdms[0]['uuid'])
 
+    def test_block_device_mapping_get_by_attachment_id(self):
+        self._create_bdm({'attachment_id': uuidsentinel.attachment_id})
+        bdm = db.block_device_mapping_get_by_attachment_id(self.ctxt,
+                uuidsentinel.attachment_id)
+        self.assertEqual(bdm.attachment_id, uuidsentinel.attachment_id)
+
     def test_block_device_mapping_get_all_by_volume_id(self):
         self._create_bdm({'volume_id': 'fake_id'})
         self._create_bdm({'volume_id': 'fake_id'})

@@ -948,6 +948,10 @@ class NovaMigrationsCheckers(test_migrations.ModelsMigrationsSync,
         self.assertIndexMembers(engine, 'block_device_mapping',
             'block_device_mapping_uuid_idx', ['uuid'])
 
+    def _check_359(self, engine, data):
+        self.assertColumnExists(engine, 'block_device_mapping',
+                                'attachment_id')
+
 
 class TestNovaMigrationsSQLite(NovaMigrationsCheckers,
                                test_base.DbTestCase,

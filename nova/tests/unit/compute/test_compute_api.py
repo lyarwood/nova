@@ -2697,7 +2697,7 @@ class _ComputeAPIUnitTestMixIn(object):
                 {'no_device': False, 'volume_id': '1', 'boot_index': 0,
                  'connection_info': 'inf', 'device_name': '/dev/vda',
                  'source_type': 'volume', 'destination_type': 'volume',
-                 'tag': None})
+                 'tag': None, 'attachment_id': None})
         instance_bdms.append(bdm)
 
         expect_meta['properties']['bdm_v2'] = True
@@ -2709,7 +2709,7 @@ class _ComputeAPIUnitTestMixIn(object):
              'device_type': None, 'snapshot_id': '1-snapshot',
              'device_name': '/dev/vda',
              'destination_type': 'volume', 'delete_on_termination': False,
-             'tag': None})
+             'tag': None, 'attachment_id': None})
 
         # All the db_only fields and the volume ones are removed
         self.compute_api.snapshot_volume_backed(
@@ -2730,14 +2730,14 @@ class _ComputeAPIUnitTestMixIn(object):
                   'disk_bus': 'ide', 'device_name': '/dev/vdf',
                   'delete_on_termination': True, 'snapshot_id': 'snapshot-2',
                   'volume_id': None, 'volume_size': 100, 'image_id': None,
-                  'no_device': None}])[:255])
+                  'no_device': None, 'attachment_id': None}])[:255])
 
         bdm = fake_block_device.FakeDbBlockDeviceDict(
                 {'no_device': False, 'volume_id': None, 'boot_index': -1,
                  'connection_info': 'inf', 'device_name': '/dev/vdh',
                  'source_type': 'blank', 'destination_type': 'local',
                  'guest_format': 'swap', 'delete_on_termination': True,
-                 'tag': None})
+                 'tag': None, 'attachment_id': None})
         instance_bdms.append(bdm)
         expect_meta['properties']['block_device_mapping'].append(
             {'guest_format': 'swap', 'boot_index': -1, 'no_device': False,
@@ -2746,7 +2746,7 @@ class _ComputeAPIUnitTestMixIn(object):
              'device_type': None, 'snapshot_id': None,
              'device_name': '/dev/vdh',
              'destination_type': 'local', 'delete_on_termination': True,
-             'tag': None})
+             'tag': None, 'attachment_id': None})
 
         quiesced = [False, False]
 
