@@ -34,6 +34,7 @@ class _TestBlockDeviceMappingObject(object):
             'id': 123,
             'instance_uuid': instance.get('uuid') or uuids.instance,
             'uuid': uuids.bdm,
+            'attachment_id': None,
             'device_name': '/dev/sda2',
             'source_type': 'snapshot',
             'destination_type': 'volume',

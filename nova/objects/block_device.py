@@ -64,7 +64,8 @@ class BlockDeviceMapping(base.NovaPersistentObject, base.NovaObject,
     #               get_by_volume() and get_by_volume_and_instance()
     # Version 1.17: Added tag field
     # Version 1.18: Added uuid
-    VERSION = '1.18'
+    # Version 1.19: Added attachment_id
+    VERSION = '1.19'
 
     fields = {
         'id': fields.IntegerField(),
@@ -87,10 +88,13 @@ class BlockDeviceMapping(base.NovaPersistentObject, base.NovaObject,
         'no_device': fields.BooleanField(default=False),
         'connection_info': fields.SensitiveStringField(nullable=True),
         'tag': fields.StringField(nullable=True),
+        'attachment_id': fields.StringField(nullable=True),
     }
 
     def obj_make_compatible(self, primitive, target_version):
         target_version = versionutils.convert_version_to_tuple(target_version)
+        if target_version < (1, 19) and 'attachment_id' in primitive:
+            del primitive['attachment_id']
         if target_version < (1, 18) and 'uuid' in primitive:
             del primitive['uuid']
         if target_version < (1, 17) and 'tag' in primitive:
