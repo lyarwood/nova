@@ -414,27 +414,6 @@ class ComputeVolumeTestCase(BaseTestCase):
             self.assertTrue(mock_unreserve.called)
             self.assertTrue(mock_destroy.called)
 
-    def test_detach_volume_api_raises(self):
-        fake_bdm = objects.BlockDeviceMapping(**self.fake_volume)
-        instance = self._create_fake_instance_obj()
-
-        with test.nested(
-            mock.patch.object(self.compute, '_driver_detach_volume'),
-            mock.patch.object(self.compute.volume_api, 'detach'),
-            mock.patch.object(objects.BlockDeviceMapping,
-                              'get_by_volume_and_instance'),
-            mock.patch.object(fake_bdm, 'destroy')
-        ) as (mock_internal_detach, mock_detach, mock_get, mock_destroy):
-            mock_detach.side_effect = test.TestingException
-            mock_get.return_value = fake_bdm
-            self.assertRaises(
-                    test.TestingException, self.compute.detach_volume,
-                    self.context, 'fake', instance, 'fake_id')
-            mock_internal_detach.assert_called_once_with(self.context,
-                                                         instance,
-                                                         fake_bdm, {})
-            self.assertTrue(mock_destroy.called)
-
     def test_await_block_device_created_too_slow(self):
         self.flags(block_device_allocate_retries=2)
         self.flags(block_device_allocate_retries_interval=0.1)
@@ -11682,9 +11661,7 @@ class EvacuateHostTestCase(BaseTestCase):
 
     @mock.patch.object(cinder.API, 'detach')
     @mock.patch.object(compute_manager.ComputeManager, '_prep_block_device')
-    @mock.patch.object(compute_manager.ComputeManager, '_driver_detach_volume')
-    def test_rebuild_on_remote_host_with_volumes(self, mock_drv_detach,
-                                                 mock_prep, mock_detach):
+    def test_rebuild_on_remote_host_with_volumes(self, mock_prep, mock_detach):
         """Confirm that the evacuate scenario does not attempt a driver detach
            when rebuilding an instance with volumes on a remote host
         """
@@ -11714,24 +11691,27 @@ class EvacuateHostTestCase(BaseTestCase):
                       fake_terminate_connection)
         self.stub_out('nova.virt.fake.FakeDriver.instance_on_disk',
                       lambda *a, **ka: True)
-        self._rebuild()
 
-        # cleanup
-        bdms = db.block_device_mapping_get_all_by_instance(self.context,
-                                                           self.inst.uuid)
-        if not bdms:
-            self.fail('BDM entry for the attached volume is missing')
-        for bdm in bdms:
-            db.block_device_mapping_destroy(self.context, bdm['id'])
+        driver_bdm = nova.virt.block_device.DriverVolumeBlockDevice
+        with mock.patch.object(driver_bdm, '_driver_detach') as drv_detach:
+            self._rebuild()
 
-        self.assertFalse(mock_drv_detach.called)
-        # make sure volumes attach, detach are called
-        mock_detach.assert_called_once_with(
-            test.MatchType(context.RequestContext),
-            mock.ANY, mock.ANY, None)
-        mock_prep.assert_called_once_with(
-            test.MatchType(context.RequestContext),
-            test.MatchType(objects.Instance), mock.ANY)
+            # cleanup
+            bdms = db.block_device_mapping_get_all_by_instance(self.context,
+                                                               self.inst.uuid)
+            if not bdms:
+                self.fail('BDM entry for the attached volume is missing')
+            for bdm in bdms:
+                db.block_device_mapping_destroy(self.context, bdm['id'])
+
+            self.assertFalse(drv_detach.called)
+            # make sure volumes attach, detach are called
+            mock_detach.assert_called_once_with(
+                test.MatchType(context.RequestContext),
+                mock.ANY, mock.ANY, None)
+            mock_prep.assert_called_once_with(
+                test.MatchType(context.RequestContext),
+                test.MatchType(objects.Instance), mock.ANY)
 
     @mock.patch.object(fake.FakeDriver, 'spawn')
     def test_rebuild_on_host_with_shared_storage(self, mock_spawn):

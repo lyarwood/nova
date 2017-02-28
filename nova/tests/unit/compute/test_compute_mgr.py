@@ -2414,20 +2414,22 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         self.assertEqual(reboot_type, 'HARD')
 
     @mock.patch('nova.objects.BlockDeviceMapping.get_by_volume_and_instance')
-    @mock.patch('nova.compute.manager.ComputeManager._driver_detach_volume')
-    @mock.patch('nova.objects.Instance._from_db_object')
-    def test_remove_volume_connection(self, inst_from_db, detach, bdm_get):
-        bdm = mock.sentinel.bdm
-        bdm.connection_info = jsonutils.dumps({})
+    @mock.patch('nova.virt.block_device.DriverVolumeBlockDevice.detach')
+    def test_remove_volume_connection(self, driver_bdm_detach, bdm_get):
         inst_obj = mock.Mock()
         inst_obj.uuid = 'uuid'
+        fake_bdm = fake_block_device.FakeDbBlockDeviceDict(
+                {'source_type': 'volume', 'destination_type': 'volume',
+                 'volume_id': 'fake-id', 'device_name': '/dev/vdb',
+                 'connection_info': '{"test": "test"}'})
+        bdm = objects.BlockDeviceMapping(context=self.context, **fake_bdm)
         bdm_get.return_value = bdm
-        inst_from_db.return_value = inst_obj
         with mock.patch.object(self.compute, 'volume_api'):
             self.compute.remove_volume_connection(self.context, 'vol',
                                                   inst_obj)
-        detach.assert_called_once_with(self.context, inst_obj, bdm, {})
         bdm_get.assert_called_once_with(self.context, 'vol', 'uuid')
+        driver_bdm_detach.assert_called_once_with(self.context, inst_obj,
+                mock.ANY, mock.ANY, do_volume_detach=False)
 
     def test_detach_volume(self):
         self._test_detach_volume()
@@ -2436,7 +2438,7 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         self._test_detach_volume(destroy_bdm=False)
 
     @mock.patch('nova.objects.BlockDeviceMapping.get_by_volume_and_instance')
-    @mock.patch('nova.compute.manager.ComputeManager._driver_detach_volume')
+    @mock.patch('nova.virt.block_device.DriverVolumeBlockDevice.detach')
     @mock.patch('nova.compute.manager.ComputeManager.'
                 '_notify_about_instance_usage')
     def _test_detach_volume(self, notify_inst_usage, detach,
@@ -2447,39 +2449,33 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         inst_obj.host = CONF.host
         attachment_id = uuids.attachment
 
-        bdm = mock.MagicMock(spec=objects.BlockDeviceMapping)
-        bdm.device_name = 'vdb'
-        bdm.connection_info = jsonutils.dumps({})
+        fake_bdm = fake_block_device.FakeDbBlockDeviceDict(
+                {'source_type': 'volume', 'destination_type': 'volume',
+                 'volume_id': volume_id, 'device_name': '/dev/vdb',
+                 'connection_info': '{"test": "test"}'})
+        bdm = objects.BlockDeviceMapping(context=self.context, **fake_bdm)
         bdm_get.return_value = bdm
 
-        detach.return_value = {}
+        with test.nested(
+            mock.patch.object(self.compute, 'volume_api'),
+            mock.patch.object(self.compute, 'driver'),
+            mock.patch.object(bdm, 'destroy'),
+        ) as (volume_api, driver, bdm_destroy):
+            self.compute._detach_volume(self.context, volume_id, inst_obj,
+                                        destroy_bdm=destroy_bdm,
+                                        attachment_id=attachment_id)
+            detach.assert_called_once_with(self.context, inst_obj,
+                    self.compute.volume_api, self.compute.driver,
+                    attachment_id=attachment_id,
+                    destroy_bdm=destroy_bdm)
+            notify_inst_usage.assert_called_once_with(
+                self.context, inst_obj, "volume.detach",
+                extra_usage_info={'volume_id': volume_id})
 
-        with mock.patch.object(self.compute, 'volume_api') as volume_api:
-            with mock.patch.object(self.compute, 'driver') as driver:
-                connector_sentinel = mock.sentinel.connector
-                driver.get_volume_connector.return_value = connector_sentinel
-
-                self.compute._detach_volume(self.context, volume_id,
-                                            inst_obj,
-                                            destroy_bdm=destroy_bdm,
-                                            attachment_id=attachment_id)
-
-                detach.assert_called_once_with(self.context, inst_obj, bdm, {})
-                driver.get_volume_connector.assert_called_once_with(inst_obj)
-                volume_api.terminate_connection.assert_called_once_with(
-                    self.context, volume_id, connector_sentinel)
-                volume_api.detach.assert_called_once_with(mock.ANY, volume_id,
-                                                          inst_obj.uuid,
-                                                          attachment_id)
-                notify_inst_usage.assert_called_once_with(
-                    self.context, inst_obj, "volume.detach",
-                    extra_usage_info={'volume_id': volume_id}
-                )
-
-                if destroy_bdm:
-                    bdm.destroy.assert_called_once_with()
-                else:
-                    self.assertFalse(bdm.destroy.called)
+            if destroy_bdm:
+                bdm_destroy.assert_called_once_with()
+            else:
+                self.assertFalse(bdm_destroy.called)
 
     def test_detach_volume_evacuate(self):
         """For evacuate, terminate_connection is called with original host."""
@@ -2524,7 +2520,11 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         volume_id = 'vol_id'
         instance = fake_instance.fake_instance_obj(self.context,
                                                    host='evacuated-host')
-        bdm = mock.Mock()
+        fake_bdm = fake_block_device.FakeDbBlockDeviceDict(
+        {'source_type': 'volume', 'destination_type': 'volume',
+         'volume_id': volume_id, 'device_name': '/dev/vdb',
+         'connection_info': '{"test": "test"}'})
+        bdm = objects.BlockDeviceMapping(context=self.context, **fake_bdm)
         bdm.connection_info = conn_info_str
         bdm_get.return_value = bdm
 
