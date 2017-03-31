@@ -42,11 +42,11 @@ class CryptsetupEncryptor(base.VolumeEncryptor):
         # Fail if no device_path was set when connecting the volume, e.g. in
         # the case of libvirt network volume drivers.
         data = connection_info['data']
+        self.volume_type = connection_info['driver_volume_type']
         if not data.get('device_path'):
             volume_id = data.get('volume_id') or connection_info.get('serial')
             raise exception.VolumeEncryptionNotSupported(
-                volume_id=volume_id,
-                volume_type=connection_info['driver_volume_type'])
+                volume_id=volume_id, volume_type=self.volume_type)
 
         # the device's path as given to libvirt -- e.g., /dev/disk/by-path/...
         self.symlink_path = connection_info['data']['device_path']
@@ -144,6 +144,11 @@ class CryptsetupEncryptor(base.VolumeEncryptor):
         key = self._get_key(context).get_encoded()
         passphrase = self._get_passphrase(key)
 
+        if self.volume_type == 'nfs':
+            path, fname = os.path.split(self.symlinkpath)
+            os.rename(self.symlinkpath, os.path.join(path, "encrypt-" + fname) 
+            self.dev_path = os.path.join(path, "encrypt-" + fname)
+
         try:
             self._open_volume(passphrase, **kwargs)
         except processutils.ProcessExecutionError as e:
@@ -168,6 +173,10 @@ class CryptsetupEncryptor(base.VolumeEncryptor):
         # nova deleting that instance successfully.
         utils.execute('cryptsetup', 'remove', self.dev_name,
                       run_as_root=True, check_exit_code=[0, 4])
+
+        if self.volume_type == 'nfs':
+            path, fname = os.path.split(self.symlinkpath)
+            os.rename(os.path.join(path, "encrypt-" + fname, self.symlinkpath) 
 
     def detach_volume(self, **kwargs):
         """Removes the dm-crypt mapping for the device."""

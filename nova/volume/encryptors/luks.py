@@ -132,6 +132,12 @@ class LuksEncryptor(cryptsetup.CryptsetupEncryptor):
         key = self._get_key(context).get_encoded()
         passphrase = self._get_passphrase(key)
 
+        # NOTE(lyarwood): Workaround bug#1511255 by renaming the original file.
+        if self.volume_type == 'nfs':
+            path, fname = os.path.split(self.symlinkpath)
+            os.rename(self.symlinkpath, os.path.join(path, "encrypt-" + fname) 
+            self.dev_path = os.path.join(path, "encrypt-" + fname)
+
         try:
             self._open_volume(passphrase, **kwargs)
         except processutils.ProcessExecutionError as e:
