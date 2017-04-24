@@ -977,20 +977,10 @@ class LibvirtDriver(driver.ComputeDriver):
             if disk_dev is not None:
                 disk_dev = disk_dev.rpartition("/")[2]
 
-            if ('data' in connection_info and
-                    'volume_id' in connection_info['data']):
-                volume_id = connection_info['data']['volume_id']
-                encryption = encryptors.get_encryption_metadata(
-                    context, self._volume_api, volume_id, connection_info)
-
-                if encryption:
-                    # The volume must be detached from the VM before
-                    # disconnecting it from its encryptor. Otherwise, the
-                    # encryptor may report that the volume is still in use.
-                    encryptor = self._get_volume_encryptor(connection_info,
-                                                           encryption)
-                    encryptor.detach_volume(**encryption)
-
+            # The volume must be detached from the VM before
+            # disconnecting it from its encryptor. Otherwise, the
+            # encryptor may report that the volume is still in use.
+            self._detach_encryptor(context, connection_info)
             try:
                 self._disconnect_volume(connection_info, disk_dev, instance)
             except Exception as exc:
@@ -1199,6 +1189,45 @@ class LibvirtDriver(driver.ComputeDriver):
                                                connection_info=connection_info,
                                                **encryption)
 
+    def _get_volume_encryption(self, context, connection_info, encryption):
+        """Get the encryption metadata dict if it is not provided
+        """
+
+        if encryption is None and ('data' in connection_info and
+                'volume_id' in connection_info['data']):
+            volume_id = connection_info['data']['volume_id']
+            encryption = encryptors.get_encryption_metadata(context,
+                            self._volume_api, volume_id, connection_info)
+        return encryption
+
+    def _attach_encryptor(self, context, connection_info, encryption=None):
+        """Attach the frontend encryptor if one is required by the volume.
+
+        The request context is only used when an encryption metadata dict is
+        not provided. The encryption metadata dict being populated is then used
+        to determine if an attempt to attach the encryptor should be made.
+        """
+        encryption = self._get_volume_encryption(context, connection_info,
+                                                 encryption)
+        if encryption:
+            encryptor = self._get_volume_encryptor(connection_info,
+                                                   encryption)
+            encryptor.attach_volume(context, **encryption)
+
+    def _detach_encryptor(self, context, connection_info, encryption=None):
+        """Detach the frontend encryptor if one is required by the volume.
+
+        The request context is only used when an encryption metadata dict is
+        not provided. The encryption metadata dict being populated is then used
+        to determine if an attempt to detach the encryptor should be made.
+        """
+        encryption = self._get_volume_encryption(context, connection_info,
+                                                 encryption)
+        if encryption:
+            encryptor = self._get_volume_encryptor(connection_info,
+                                                   encryption)
+            encryptor.detach_volume(**encryption)
+
     def _check_discard_for_attach_volume(self, conf, instance):
         """Perform some checks for volumes configured for discard support.
 
@@ -1255,11 +1284,7 @@ class LibvirtDriver(driver.ComputeDriver):
             state = guest.get_power_state(self._host)
             live = state in (power_state.RUNNING, power_state.PAUSED)
 
-            if encryption:
-                encryptor = self._get_volume_encryptor(connection_info,
-                                                       encryption)
-                encryptor.attach_volume(context, **encryption)
-
+            self._attach_encryptor(context, connection_info, encryption)
             guest.attach_device(conf, persistent=True, live=live)
             # NOTE(artom) If we're attaching with a device role tag, we need to
             # rebuild device_metadata. If we're attaching without a role
@@ -1402,11 +1427,11 @@ class LibvirtDriver(driver.ComputeDriver):
                                                              disk_dev,
                                                              live=live)
             wait_for_detach()
-
-            if encryption:
-                encryptor = self._get_volume_encryptor(connection_info,
-                                                       encryption)
-                encryptor.detach_volume(**encryption)
+            # NOTE(lyarwood): We can provide None as the request context here
+            # as we already have the encryption metadata dict from the compute
+            # layer. This avoids the need to add the request context to the
+            # signature of detach_volume requiring changes across all drivers.
+            self._detach_encryptor(None, connection_info, encryption)
 
         except exception.InstanceNotFound:
             # NOTE(zhaoqin): If the instance does not exist, _lookup_by_name()
@@ -5230,17 +5255,8 @@ class LibvirtDriver(driver.ComputeDriver):
 
         for vol in block_device_mapping:
             connection_info = vol['connection_info']
-
-            if (not reboot and 'data' in connection_info and
-                    'volume_id' in connection_info['data']):
-                volume_id = connection_info['data']['volume_id']
-                encryption = encryptors.get_encryption_metadata(
-                    context, self._volume_api, volume_id, connection_info)
-
-                if encryption:
-                    encryptor = self._get_volume_encryptor(connection_info,
-                                                           encryption)
-                    encryptor.attach_volume(context, **encryption)
+            if not reboot:
+                self._attach_encryptor(context, connection_info)
 
         timeout = CONF.vif_plugging_timeout
         if (self._conn_supports_start_paused and

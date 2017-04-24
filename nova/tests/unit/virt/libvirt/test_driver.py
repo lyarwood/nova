@@ -6819,6 +6819,198 @@ class LibvirtConnTestCase(test.NoDBTestCase,
                           drvr.extend_volume,
                           connection_info, instance)
 
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_use_encryptor_connection_info_incomplete(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert no attach attempt is made given incomplete connection_info.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        connection_info = {'data': {}}
+
+        drvr._attach_encryptor(self.context, connection_info)
+
+        mock_get_metadata.assert_not_called()
+        mock_get_encryptor.assert_not_called()
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_attach_encryptor_unencrypted_volume_meta_missing(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that if not provided encryption metadata is fetched even
+           if the volume is ultimately unencrypted and no attempt to attach
+           is made.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        encryption = {}
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+        mock_get_metadata.return_value = encryption
+
+        drvr._attach_encryptor(self.context, connection_info)
+
+        mock_get_metadata.assert_called_once_with(self.context,
+                drvr._volume_api, uuids.volume_id, connection_info)
+        mock_get_encryptor.assert_not_called()
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_attach_encryptor_unencrypted_volume_meta_provided(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that if an empty encryption metadata dict is provided that
+        there is no additional attempt to lookup the metadata or attach the
+        encryptor.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        encryption = {}
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+
+        drvr._attach_encryptor(self.context, connection_info,
+                               encryption=encryption)
+
+        mock_get_metadata.assert_not_called()
+        mock_get_encryptor.assert_not_called()
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_attach_encryptor_encrypted_volume_meta_missing(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that if missing the encryption metadata of an encrypted
+        volume is fetched and then used to attach the encryptor for the volume.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        mock_encryptor = mock.MagicMock()
+        mock_get_encryptor.return_value = mock_encryptor
+        encryption = {'provider': 'luks', 'control_location': 'front-end'}
+        mock_get_metadata.return_value = encryption
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+
+        drvr._attach_encryptor(self.context, connection_info)
+
+        mock_get_metadata.assert_called_once_with(self.context,
+                drvr._volume_api, uuids.volume_id, connection_info)
+        mock_get_encryptor.assert_called_once_with(connection_info,
+                                                   encryption)
+        mock_encryptor.attach_volume.assert_called_once_with(self.context,
+                                                             **encryption)
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_attach_encryptor_encrypted_volume_meta_provided(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that when provided there are no further attempts to fetch the
+        encryption metadata for the volume and that the provided metadata is
+        then used to attach the volume.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        mock_encryptor = mock.MagicMock()
+        mock_get_encryptor.return_value = mock_encryptor
+        encryption = {'provider': 'luks', 'control_location': 'front-end'}
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+
+        drvr._attach_encryptor(self.context, connection_info,
+                encryption=encryption)
+
+        mock_get_metadata.assert_not_called()
+        mock_get_encryptor.assert_called_once_with(connection_info,
+                                                   encryption)
+        mock_encryptor.attach_volume.assert_called_once_with(self.context,
+                                                             **encryption)
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_detach_encryptor_connection_info_incomplete(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert no detach attempt is made given incomplete connection_info.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        connection_info = {'data': {}}
+
+        drvr._detach_encryptor(self.context, connection_info)
+
+        mock_get_metadata.assert_not_called()
+        mock_get_encryptor.assert_not_called()
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_detach_encryptor_unencrypted_volume_meta_missing(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that if not provided encryption metadata is fetched even
+           if the volume is ultimately unencrypted and no attempt to detach
+           is made.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        encryption = {}
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+        mock_get_metadata.return_value = encryption
+
+        drvr._detach_encryptor(self.context, connection_info)
+
+        mock_get_metadata.assert_called_once_with(self.context,
+                drvr._volume_api, uuids.volume_id, connection_info)
+        mock_get_encryptor.assert_not_called()
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_detach_encryptor_unencrypted_volume_meta_provided(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that if an empty encryption metadata dict is provided that
+        there is no additional attempt to lookup the metadata or detach the
+        encryptor.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        encryption = {}
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+
+        drvr._detach_encryptor(self.context, connection_info,
+                               encryption=encryption)
+
+        mock_get_metadata.assert_not_called()
+        mock_get_encryptor.assert_not_called()
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_detach_encryptor_encrypted_volume_meta_missing(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that if missing the encryption metadata of an encrypted
+        volume is fetched and then used to detach the encryptor for the volume.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        mock_encryptor = mock.MagicMock()
+        mock_get_encryptor.return_value = mock_encryptor
+        encryption = {'provider': 'luks', 'control_location': 'front-end'}
+        mock_get_metadata.return_value = encryption
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+
+        drvr._detach_encryptor(self.context, connection_info)
+
+        mock_get_metadata.assert_called_once_with(self.context,
+                drvr._volume_api, uuids.volume_id, connection_info)
+        mock_get_encryptor.assert_called_once_with(connection_info,
+                                                   encryption)
+        mock_encryptor.detach_volume.assert_called_once_with(**encryption)
+
+    @mock.patch('os_brick.encryptors.get_encryption_metadata')
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_volume_encryptor')
+    def test_detach_encryptor_encrypted_volume_meta_provided(self,
+            mock_get_encryptor, mock_get_metadata):
+        """Assert that when provided there are no further attempts to fetch the
+        encryption metadata for the volume and that the provided metadata is
+        then used to detach the volume.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        mock_encryptor = mock.MagicMock()
+        mock_get_encryptor.return_value = mock_encryptor
+        encryption = {'provider': 'luks', 'control_location': 'front-end'}
+        connection_info = {'data': {'volume_id': uuids.volume_id}}
+
+        drvr._detach_encryptor(self.context, connection_info,
+                encryption=encryption)
+
+        mock_get_metadata.assert_not_called()
+        mock_get_encryptor.assert_called_once_with(connection_info,
+                                                   encryption)
+        mock_encryptor.detach_volume.assert_called_once_with(**encryption)
+
     def test_multi_nic(self):
         network_info = _fake_network_info(self, 2)
         drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
@@ -14970,14 +15162,14 @@ class LibvirtConnTestCase(test.NoDBTestCase,
                         network_model.VIF(id='2', active=True)]
 
         with test.nested(
-            mock.patch.object(drvr, '_get_volume_encryptor'),
+            mock.patch.object(drvr, '_attach_encryptor'),
             mock.patch.object(drvr, 'plug_vifs'),
             mock.patch.object(drvr.firewall_driver, 'setup_basic_filtering'),
             mock.patch.object(drvr.firewall_driver,
                               'prepare_instance_filter'),
             mock.patch.object(drvr, '_create_domain'),
             mock.patch.object(drvr.firewall_driver, 'apply_instance_filter'),
-        ) as (get_volume_encryptor, plug_vifs, setup_basic_filtering,
+        ) as (attach_encryptor, plug_vifs, setup_basic_filtering,
               prepare_instance_filter, create_domain, apply_instance_filter):
             create_domain.return_value = libvirt_guest.Guest(mock_dom)
 
@@ -14985,10 +15177,8 @@ class LibvirtConnTestCase(test.NoDBTestCase,
                     self.context, fake_xml, instance, network_info,
                     block_device_info=block_device_info)
 
-            get_encryption_metadata.assert_called_once_with(self.context,
-                drvr._volume_api, fake_volume_id, connection_info)
-            get_volume_encryptor.assert_called_once_with(connection_info,
-                                                         mock_encryption_meta)
+            attach_encryptor.assert_called_once_with(self.context,
+                                                     connection_info)
             plug_vifs.assert_called_once_with(instance, network_info)
             setup_basic_filtering.assert_called_once_with(instance,
                                                           network_info)
