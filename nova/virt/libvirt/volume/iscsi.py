@@ -48,10 +48,10 @@ class LibvirtISCSIVolumeDriver(libvirt_volume.LibvirtBaseVolumeDriver):
 
         return transport
 
-    def get_config(self, connection_info, disk_info):
+    def get_config(self, connection_info, disk_info, encryption):
         """Returns xml for libvirt."""
         conf = super(LibvirtISCSIVolumeDriver,
-                     self).get_config(connection_info, disk_info)
+                     self).get_config(connection_info, disk_info, encryption)
         conf.source_type = "block"
         conf.source_path = connection_info['data']['device_path']
         conf.driver_io = "native"

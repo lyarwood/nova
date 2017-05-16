@@ -47,6 +47,7 @@ from eventlet import greenthread
 from eventlet import tpool
 from lxml import etree
 from os_brick import encryptors
+from os_brick.encryptors import luks as luks_encryptor
 from os_brick import exception as brick_exception
 from os_brick.initiator import connector
 from oslo_concurrency import processutils
@@ -295,6 +296,9 @@ PERF_EVENTS_CPU_FLAG_MAPPING = {'cmt': 'cmt',
                                 'mbml': 'mbm_local',
                                 'mbmt': 'mbm_total',
                                }
+
+MIN_LIBVIRT_LUKS_VERSION = (2, 2, 0)
+MIN_QEMU_LUKS_VERSION = (2, 6, 0)
 
 
 class LibvirtDriver(driver.ComputeDriver):
@@ -586,6 +590,10 @@ class LibvirtDriver(driver.ComputeDriver):
     def _is_virtlogd_available(self):
         return self._host.has_min_version(MIN_LIBVIRT_VIRTLOGD,
                                           MIN_QEMU_VIRTLOGD)
+
+    def _is_native_luks_available(self):
+        return self._host.has_min_version(MIN_LIBVIRT_LUKS_VERSION,
+                                          MIN_QEMU_LUKS_VERSION)
 
     def _handle_live_migration_post_copy(self, migration_flags):
         if CONF.libvirt.live_migration_permit_post_copy:
@@ -1176,11 +1184,63 @@ class LibvirtDriver(driver.ComputeDriver):
         vol_driver = self._get_volume_driver(connection_info)
         return vol_driver.extend_volume(connection_info, instance)
 
-    def _get_volume_config(self, connection_info, disk_info):
-        vol_driver = self._get_volume_driver(connection_info)
-        conf = vol_driver.get_config(connection_info, disk_info)
-        self._set_cache_mode(conf)
+    def _use_native_luks(self, encryption):
+        """Is LUKS the required provider and native QEMU LUKS available
+        """
+        provider = encryption.get('provider', None)
+        if provider is None:
+            return False
+
+        if provider in encryptors.LEGACY_PROVIDER_CLASS_TO_FORMAT_MAP:
+            provider = encryptors.LEGACY_PROVIDER_CLASS_TO_FORMAT_MAP[provider]
+
+        return provider == encryptors.LUKS and self._is_native_luks_available()
+
+    def _get_native_luks_volume_config(self, context, vol_driver,
+                                       connection_info, disk_info, encryption):
+        keymgr = key_manager.API(CONF)
+        key = keymgr.get(context, encryption['encryption_key_id'])
+        passphrase = str(key.get_encoded())
+
+        volume_id = connection_info['data']['volume_id']
+        secret = self._host.create_secret('volume', volume_id,
+                                          password=passphrase)
+        connection_info['secret_uuid'] = secret.UUIDString()
+        try:
+            conf = vol_driver.get_config(connection_info, disk_info,
+                                         encryption)
+
+            # NOTE(lyarwood): This copies the current behaviour of the frontend
+            # encryptor LuksEncryptor by formatting any unencrypted volume
+            # prior to attaching the volume.
+            # TODO(lyarwood): Remove or replace this with qemu-img either
+            # elsewhere in n-cpu before attaching or c-vol when creating the
+            # volume.
+            root_helper = utils.get_root_helper()
+            if 'device_path' in connection_info['data']:
+                if not luks_encryptor.is_luks(root_helper,
+                        connection_info['data']['device_path']):
+                    encryptor = self._get_volume_encryptor(connection_info,
+                                                           encryption)
+                    encryptor._format_volume(passphrase,
+                                             cipher=encryption['cipher'],
+                                             key_size=encryption['key_size'])
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self._host.delete_secret('volume', volume_id)
+
         return conf
+
+    def _get_volume_config(self, context, connection_info, disk_info,
+                           encryption=None):
+        vol_driver = self._get_volume_driver(connection_info)
+        encryption = self._get_volume_encryption_metadata(context,
+                connection_info, encryption)
+
+        if encryption and self._use_native_luks(encryption):
+            return self._get_native_luks_volume_config(context, vol_driver,
+                    connection_info, disk_info, encryption)
+        return vol_driver.get_config(connection_info, disk_info, encryption)
 
     def _get_volume_encryptor(self, connection_info, encryption):
         root_helper = utils.get_root_helper()
@@ -1209,7 +1269,7 @@ class LibvirtDriver(driver.ComputeDriver):
         """
         encryption = self._get_volume_encryption(context, connection_info,
                                                  encryption)
-        if encryption:
+        if encryption and not self._use_native_luks(encryption):
             encryptor = self._get_volume_encryptor(connection_info,
                                                    encryption)
             encryptor.attach_volume(context, **encryption)
@@ -1223,10 +1283,12 @@ class LibvirtDriver(driver.ComputeDriver):
         """
         encryption = self._get_volume_encryption(context, connection_info,
                                                  encryption)
-        if encryption:
+        if encryption and not self._use_native_luks(encryption):
             encryptor = self._get_volume_encryptor(connection_info,
                                                    encryption)
             encryptor.detach_volume(**encryption)
+        elif connection_info.get('secret_uuid', None):
+            self._host.delete_secret('volume', connection_info['secret_uuid'])
 
     def _check_discard_for_attach_volume(self, conf, instance):
         """Perform some checks for volumes configured for discard support.
@@ -1276,7 +1338,8 @@ class LibvirtDriver(driver.ComputeDriver):
         if disk_info['bus'] == 'scsi':
             disk_info['unit'] = self._get_scsi_controller_max_unit(guest) + 1
 
-        conf = self._get_volume_config(connection_info, disk_info)
+        conf = self._get_volume_config(context, connection_info, disk_info,
+                                       encryption)
 
         self._check_discard_for_attach_volume(conf, instance)
 
@@ -3698,7 +3761,7 @@ class LibvirtDriver(driver.ComputeDriver):
         disk = self.image_backend.by_name(instance, name, image_type)
         return disk.libvirt_fs_info("/", "ploop")
 
-    def _get_guest_storage_config(self, instance, image_meta,
+    def _get_guest_storage_config(self, context, instance, image_meta,
                                   disk_info,
                                   rescue, block_device_info,
                                   inst_type, os_type):
@@ -3813,7 +3876,7 @@ class LibvirtDriver(driver.ComputeDriver):
             if scsi_controller and scsi_controller.model == 'virtio-scsi':
                 info['unit'] = disk_mapping['unit']
                 disk_mapping['unit'] += 1
-            cfg = self._get_volume_config(connection_info, info)
+            cfg = self._get_volume_config(context, connection_info, info)
             devices.append(cfg)
             vol['connection_info'] = connection_info
             vol.save()
@@ -4894,7 +4957,7 @@ class LibvirtDriver(driver.ComputeDriver):
                            image_meta)
         self._set_clock(guest, instance.os_type, image_meta, virt_type)
 
-        storage_configs = self._get_guest_storage_config(
+        storage_configs = self._get_guest_storage_config(context,
                 instance, image_meta, disk_info, rescue, block_device_info,
                 flavor, guest.os_type)
         for config in storage_configs:

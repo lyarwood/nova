@@ -98,10 +98,10 @@ class LibvirtNetVolumeDriver(libvirt_volume.LibvirtBaseVolumeDriver):
             conf.auth_secret_uuid = self._get_secret_uuid(conf, password)
             conf.auth_username = netdisk_properties['auth_username']
 
-    def get_config(self, connection_info, disk_info):
+    def get_config(self, connection_info, disk_info, encryption):
         """Returns xml for libvirt."""
         conf = super(LibvirtNetVolumeDriver,
-                     self).get_config(connection_info, disk_info)
+                     self).get_config(connection_info, disk_info, encryption)
 
         netdisk_properties = connection_info['data']
         conf.source_type = "network"

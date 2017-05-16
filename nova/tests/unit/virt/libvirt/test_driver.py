@@ -7011,6 +7011,51 @@ class LibvirtConnTestCase(test.NoDBTestCase,
                                                    encryption)
         mock_encryptor.detach_volume.assert_called_once_with(**encryption)
 
+    @mock.patch.object(host.Host, "has_min_version")
+    def test_use_native_luks(self, mock_has_min_version):
+        """Assert that native LUKS is only used when the required versions are
+        installed and a valid LUKS provider is present within the encryption
+        metadata dict.
+        """
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        # True only when the required QEMU and Libvirt versions are avialable
+        # on the host and a valid LUKS provider is present within the
+        # encryption metadata dict.
+        mock_has_min_version.return_value = True
+        self.assertFalse(drvr._use_native_luks({}))
+        self.assertFalse(drvr._use_native_luks({
+            'provider': 'nova.volume.encryptors.cryptsetup.CryptSetupEncryptor'
+        }))
+        self.assertFalse(drvr._use_native_luks({
+            'provider': 'CryptSetupEncryptor'}))
+        self.assertFalse(drvr._use_native_luks({
+            'provider': 'plain'}))
+        self.assertTrue(drvr._use_native_luks({
+            'provider': 'nova.volume.encryptors.cryptsetup.LuksEncryptor'}))
+        self.assertTrue(drvr._use_native_luks({
+            'provider': 'LuksEncryptor'}))
+        self.assertTrue(drvr._use_native_luks({
+            'provider': 'luks'}))
+
+        # Always False when the required QEMU and Libvirt versions are not
+        # avilable on the host.
+        mock_has_min_version.return_value = False
+        self.assertFalse(drvr._use_native_luks({
+            'provider': 'nova.volume.encryptors.cryptsetup.LuksEncryptor'}))
+        self.assertFalse(drvr._use_native_luks({
+            'provider': 'LuksEncryptor'}))
+        self.assertFalse(drvr._use_native_luks({
+            'provider': 'luks'}))
+
+    def test_get_native_luks_volume_config(self, mock_keymgr, mock_host):
+        pass
+
+    def test_get_native_luks_volume_config_format_unencrypted_volume(self):
+        pass
+
+    def test_get_native_luks_volume_config_delete_secret_on_failure(self):
+        pass
+
     def test_multi_nic(self):
         network_info = _fake_network_info(self, 2)
         drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)

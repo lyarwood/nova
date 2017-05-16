@@ -38,7 +38,7 @@ class LibvirtBaseVolumeDriver(object):
         self.host = host
         self.is_block_dev = is_block_dev
 
-    def get_config(self, connection_info, disk_info):
+    def get_config(self, connection_info, disk_info, encryption):
         """Returns xml for libvirt."""
         conf = vconfig.LibvirtConfigGuestDisk()
         conf.driver_name = libvirt_utils.pick_disk_driver_name(
@@ -103,6 +103,15 @@ class LibvirtBaseVolumeDriver(object):
                 # virtio-scsi controller, the device addr should be
                 # specified.
                 conf.device_addr.unit = disk_info['unit']
+
+        if encryption and 'secret_uuid' in connection_info:
+            conf.encryption = vconfig.LibvirtConfigGuestDiskEncryption()
+            secret = vconfig.LibvirtConfigGuestDiskEncryptionSecret()
+
+            conf.encryption.format = 'luks'
+            secret.type = 'passphrase'
+            secret.uuid = connection_info['secret_uuid']
+            conf.encryption.secret = secret
 
         return conf
 
