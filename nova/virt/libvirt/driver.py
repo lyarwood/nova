@@ -1252,14 +1252,18 @@ class LibvirtDriver(driver.ComputeDriver):
         vol_driver = self._get_volume_driver(connection_info)
         return vol_driver.extend_volume(connection_info, instance)
 
-    def _use_native_luks(self, encryption=None):
-        """Is LUKS the required provider and native QEMU LUKS available
-        """
+    def _map_encryption_provider(self, encryption):
         provider = None
         if encryption:
             provider = encryption.get('provider', None)
         if provider in encryptors.LEGACY_PROVIDER_CLASS_TO_FORMAT_MAP:
             provider = encryptors.LEGACY_PROVIDER_CLASS_TO_FORMAT_MAP[provider]
+        return provider
+
+    def _use_native_luks(self, encryption=None):
+        """Is LUKS the required provider and native QEMU LUKS available
+        """
+        provider = self._map_encryption_provider(encryption)
         return provider == encryptors.LUKS and self._is_native_luks_available()
 
     def _get_volume_config(self, connection_info, disk_info):
@@ -7672,7 +7676,18 @@ class LibvirtDriver(driver.ComputeDriver):
         # migrating so the guest xml should already be persisted on the
         # destination host, so just perform a sanity check to make sure it
         # made it as expected.
-        self._host.get_guest(instance)
+        guest = self._host.get_guest(instance)
+        #TODO(lyarwood): Assert that an encrypted LUKS volume is being correctly decrypted on the destination.
+        if block_device_info:
+            block_device_mapping = driver.block_device_info_get_mapping(
+                                    block_device_info)
+            for vol in block_device_mapping:
+                encryption = self._get_volume_encryption(context,
+                                    vol['connection_info']) 
+                if encryption and self._use_native_luks(encryption):
+                    disk = guest.get_disk(vol[''])
+                    if disk.encryption is None:
+                        raise Nope()
 
     def _get_instance_disk_info_from_config(self, guest_config,
                                             block_device_info):
