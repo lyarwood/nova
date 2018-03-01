@@ -1049,6 +1049,30 @@ class Rbd(Image):
             if also_destroy_volume:
                 self.driver.destroy_volume(_im, pool=_pool)
 
+    def cache(self, fetch_func, filename, size=None, *args, **kwargs):
+        """Creates image from template.
+
+        Ensures that template and image not already exists.
+        Ensures that base directory exists.
+        Synchronizes on template fetching.
+
+        :fetch_func: Function that creates the base image
+                     Should accept `target` argument.
+        :filename: Name of the file in the image directory
+        :size: Size of created image in bytes (optional)
+        """
+        base_dir = os.path.join(CONF.instances_path,
+                                CONF.image_cache_subdirectory_name)
+        if not os.path.exists(base_dir):
+            fileutils.ensure_tree(base_dir)
+        base = os.path.join(base_dir, filename)
+
+        if target != base or not os.path.exists(target):
+            fetch_func(target=target, *args, **kwargs)
+
+        if not self.exists() or not os.path.exists(base):
+            self.import_file(fetch_func_sync, base, size,
+                              *args, **kwargs)
 
 class Ploop(Image):
     def __init__(self, instance=None, disk_name=None, path=None):
