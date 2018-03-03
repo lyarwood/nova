@@ -105,6 +105,22 @@ class BlockDeviceMapping(base.NovaPersistentObject, base.NovaObject,
             del primitive['tag']
 
     @classmethod
+    def remove_duplicates(cls, contest):
+        duplicate_bdms = context.session.query(db_models.BlockDeviceMapping).\
+                    filter_by(uuid=None).limit(count).all()
+
+        db_bdms = get_bdms_no_uuid(context)
+
+        done = 0
+        for db_bdm in db_bdms:
+            cls._create_uuid(context, db_bdm['id'])
+            done += 1
+
+        return done, done
+
+        
+    
+    @classmethod
     def populate_uuids(cls, context, count):
         @db_api.pick_context_manager_reader
         def get_bdms_no_uuid(context):
