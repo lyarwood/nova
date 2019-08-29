@@ -66,6 +66,7 @@ from nova import rpc
 from nova import service
 from nova.tests.functional.api import client
 from nova.tests.unit import fake_requests
+from nova import utils
 
 _TRUE_VALUES = ('True', 'true', '1', 'yes')
 
@@ -84,7 +85,7 @@ class ServiceFixture(fixtures.Fixture):
         # If not otherwise specified, the host will default to the
         # name of the service. Some things like aggregates care that
         # this is stable.
-        host = host or name
+        self.host = host or name
         kwargs.setdefault('host', host)
         kwargs.setdefault('binary', 'nova-%s' % name)
         self.cell = cell
@@ -101,8 +102,15 @@ class ServiceFixture(fixtures.Fixture):
         self.useFixture(fixtures.MockPatch(
             'nova.network.linux_net.IptablesManager._apply'))
 
-        with mock.patch('nova.context.get_admin_context',
-                        return_value=self.ctxt):
+        # NOTE(lyarwood): Mock get_hostname here as the current mocking of
+        # getHostname within fakelibvirt provides a single hardcoded hostname
+        # when we need unique hostnames across each of the n-cpu services we
+        # launch.
+        with utils.nested_contexts(
+            mock.patch('nova.context.get_admin_context',
+                       return_value=self.ctxt),
+            mock.patch('nova.virt.libvirt.host.Host.get_hostname',
+                       return_value=self.host)):
             self.service = service.Service.create(**self.kwargs)
             self.service.start()
         self.addCleanup(self.service.kill)
