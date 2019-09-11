@@ -8705,15 +8705,24 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def post_live_migration(self, context, instance, block_device_info,
                             migrate_data=None):
-        # Disconnect from volume server
-        block_device_mapping = driver.block_device_info_get_mapping(
-                block_device_info)
-        for vol in block_device_mapping:
-            # NOTE(mdbooth): The block_device_info we were passed was
-            # initialized with BDMs from the source host before they were
-            # updated to point to the destination. We can safely use this to
-            # disconnect the source without re-fetching.
-            self._disconnect_volume(context, vol['connection_info'], instance)
+        # NOTE(lyarwood): Ignore exceptions here to avoid the instance being
+        # left in an ERROR state and still marked on the source host.
+        try:
+            # Disconnect from volume server
+            block_device_mapping = driver.block_device_info_get_mapping(
+                    block_device_info)
+            for vol in block_device_mapping:
+                # NOTE(mdbooth): The block_device_info we were passed was
+                # initialized with BDMs from the source host before they were
+                # updated to point to the destination. We can safely use this to
+                # disconnect the source without re-fetching.
+                self._disconnect_volume(context, vol['connection_info'],
+                                        instance)
+        except Exception as ex:
+            LOG.exception("Ignoring exception while attempting to disconnect "
+                          "volumes from the source during post_live_migration",
+                          instance=instance)
+
 
     def post_live_migration_at_source(self, context, instance, network_info):
         """Unplug VIFs from networks at source.

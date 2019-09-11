@@ -130,13 +130,9 @@ class TestPostLiveMigrationVolumeDisconnectErrror(base.ServersTestBase,
                 "host": "dest",
             }})
 
-        # FIXME (lyarwood): The instance should be ACTIVE with the migration
-        # complete and running on the dest even after a disconnect_volume
-        # failure during LM.
-        self._wait_for_state_change(server, 'ERROR')
-        self._wait_for_migration_status(server, ['error'])
-        server = self.admin_api.get_server(server_id)
-        self.assertEqual('src', server['OS-EXT-SRV-ATTR:host'])
+        self._wait_for_state_change(server_response, 'ACTIVE')
+        self._wait_for_migration_status(server_response, ['completed'])
+        self.assertEqual('dest', server['OS-EXT-SRV-ATTR:host'])
 
         # Ensure we actually called disconnect_volume
         mock_volume_driver.disconnect_volume.assert_called_once_with(mock.ANY,
